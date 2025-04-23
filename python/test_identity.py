@@ -231,7 +231,6 @@ class IdentityChainClient:
                 public_key_bytes,          # 公钥 (bytes)
                 name,                      # 设备名称 (string)
                 metadata_bytes32,          # 元数据哈希 (bytes32)
-                authorizer_address,        # 授权者地址 (address)
                 signature                  # 空签名，因为我们假设以管理员身份调用
             ).build_transaction({
                 'from': self.account.address,

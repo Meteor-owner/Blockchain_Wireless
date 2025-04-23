@@ -78,12 +78,29 @@ contract IdentityManager {
     // 系统管理员地址（可以直接注册而不需要授权）
     address public systemAdmin;
 
+    // 系统默认网络
+    bytes32 public defaultNetworkId;
+    string public defaultNetworkName = "Default WiFi Network";
+
     /**
      * @dev 构造函数，设置系统管理员
      */
     constructor() {
         systemAdmin = msg.sender;
         registeredUsers[msg.sender] = true;
+
+        // 创建默认网络
+        defaultNetworkId = keccak256(abi.encodePacked("default-network", block.timestamp));
+        networks[defaultNetworkId] = Network({
+            owner: msg.sender,
+            networkId: defaultNetworkId,
+            name: defaultNetworkName,
+            createdAt: block.timestamp,
+            isActive: true
+        });
+
+        ownerNetworks[msg.sender].push(defaultNetworkId);
+        emit NetworkCreated(defaultNetworkId, msg.sender, defaultNetworkName);
     }
 
     /**
@@ -164,48 +181,43 @@ contract IdentityManager {
         bytes calldata publicKey,
         string calldata name,
         bytes32 metadata,
-//        address authorizer,
         bytes calldata signature
-    ) external returns (bool success, string memory message){
-        require(devices[did].owner == address(0), "Device already registered");
-        require(publicKey.length > 0, "Invalid public key");
+    ) external returns (bool success, string memory message) {
+        if (devices[did].owner != address(0)) {
+            return (false, "Device already registered");
+        }
+
+        if (publicKey.length == 0) {
+            return (false, "Invalid public key");
+        }
+
+        address authorizer;
 
         if (msg.sender == systemAdmin) {
-            bool deviceRegistry = _registerDeviceInternal(
-                deviceType,
-                did,
-                publicKey,
-                name,
-                metadata,
-                systemAdmin
-            );
-            if (!deviceRegistry) {
-                return (false, "Device already registried");
-            }
-            return (true, "Registration successful");
-        }
-        else {
-
+            authorizer = systemAdmin;
+        } else {
             bytes32 messageHash = getSignatureMessageHash(deviceType, did, publicKey, name, metadata, msg.sender);
-            address authorizer = recoverSigner(messageHash, signature);
-            require(registeredUsers[authorizer], "Authorizer not registered");
+            authorizer = recoverSigner(messageHash, signature);
 
-            // 注册设备
-            bool deviceRegistry = _registerDeviceInternal(
-                deviceType,
-                did,
-                publicKey,
-                name,
-                metadata,
-                authorizer
-            );
-
-            if (!deviceRegistry) {
-                return (false, "Device already registried");
+            if (!registeredUsers[authorizer]) {
+                return (false, "Authorizer not registered");
             }
-
-            return (true, "Registration successful");
         }
+
+        bool deviceRegistry = _registerDeviceInternal(
+            deviceType,
+            did,
+            publicKey,
+            name,
+            metadata,
+            authorizer
+        );
+
+        if (!deviceRegistry) {
+            return (false, "Device already registered");
+        }
+
+        return (true, "Registration successful");
     }
 
     /**
@@ -254,6 +266,11 @@ contract IdentityManager {
             emit AccessGranted(did, ownedNetworks[i]);
         }
 
+        if (ownedNetworks.length == 0) {
+            deviceNetworkAccess[did][defaultNetworkId] = true;
+            emit AccessGranted(did, defaultNetworkId);
+        }
+
         return (true);
     }
 
@@ -289,7 +306,7 @@ contract IdentityManager {
     function issueInitialToken(bytes32 did) internal returns (bytes32) {
         // 生成令牌ID
         bytes32 tokenId = keccak256(abi.encodePacked("initial", did, block.timestamp));
-        uint256 expiresAt = block.timestamp + 1 days; // 24小时有效期
+        uint256 expiresAt = block.timestamp + 2 days; // 24小时有效期
 
         // 创建令牌
         accessTokens[tokenId] = AccessToken({
@@ -405,18 +422,78 @@ contract IdentityManager {
      * @return 验证结果
      */
     function verifySignature(bytes32 did, bytes32 challenge, bytes calldata signature) public view returns (bool) {
-        // 实际实现中应该使用ECDSA进行签名验证
-        // 例如使用设备的公钥验证signature是否是由相应私钥对challenge签名产生的
-
-        // 以下是简化示例，实际应用中需要实现真正的ECDSA验证
         Device storage device = devices[did];
         require(device.owner != address(0), "Device not found");
+        require(device.isActive, "Device is not active");
 
-        // TODO: 实现ECDSA签名验证
-        // bytes memory publicKey = device.publicKey;
-        // return ECDSAVerify(publicKey, challenge, signature);
+        // 验证签名长度
+        require(signature.length == 65, "Invalid signature length");
 
-        return true; // 示例中简化为始终返回true
+        // 构建要验证的消息哈希
+        // 注意：这里需要使用相同的方式构建消息哈希，就像设备签名时一样
+        bytes32 messageHash = keccak256(abi.encodePacked(did, challenge));
+        bytes32 ethSignedMessageHash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", messageHash));
+
+        // 从签名中提取r, s, v组件
+        bytes32 r;
+        bytes32 s;
+        uint8 v;
+
+        bytes memory signatureInMemory = signature;
+
+        assembly {
+        // 从内存中获取r、s、v
+            r := mload(add(signatureInMemory, 32))
+            s := mload(add(signatureInMemory, 64))
+            v := byte(0, mload(add(signatureInMemory, 96)))
+        }
+
+        // 如果使用了较新的签名标准，调整v值
+        if (v < 27) {
+            v += 27;
+        }
+
+        // 使用ecrecover恢复签名者的公钥
+        address recoveredAddress = ecrecover(ethSignedMessageHash, v, r, s);
+
+        // 将恢复的地址与设备的公钥进行比较
+        // 这里假设publicKey中存储的是以太坊地址格式的公钥
+        // 如果您使用的是原始ECDSA公钥，则需要先将其转换为地址
+        address deviceAddress = publicKeyToAddress(device.publicKey);
+
+        return recoveredAddress != address(0) && recoveredAddress == deviceAddress;
+    }
+
+    /**
+     * @dev 将公钥转换为以太坊地址
+     * @param publicKey 公钥
+     * @return 对应的以太坊地址
+     */
+    function publicKeyToAddress(bytes memory publicKey) internal pure returns (address) {
+        // 确保公钥长度正确（去除前缀字节）
+        require(publicKey.length >= 64, "Invalid public key length");
+
+        // 如果公钥包含0x04前缀（非压缩格式），则移除它
+        bytes memory pubKeyNoPrefix;
+        if (publicKey.length > 64 && publicKey[0] == 0x04) {
+            pubKeyNoPrefix = new bytes(64);
+            for (uint i = 0; i < 64; i++) {
+                pubKeyNoPrefix[i] = publicKey[i + 1];
+            }
+        } else {
+            pubKeyNoPrefix = publicKey;
+        }
+
+        // 计算公钥的keccak256哈希，取最后20字节作为地址
+        bytes32 hash = keccak256(pubKeyNoPrefix);
+        address addr;
+
+        assembly {
+        // 取哈希的最后20字节（160位）
+            addr := mload(add(hash, 12))
+        }
+
+        return addr;
     }
 
     /**
@@ -453,7 +530,7 @@ contract IdentityManager {
         if (validSignature && hasAccess) {
             // 发放访问令牌
             bytes32 tokenId = keccak256(abi.encodePacked(did, block.timestamp, blockhash(block.number - 1)));
-            uint256 expiresAt = block.timestamp + 1 days; // 默认24小时有效期
+            uint256 expiresAt = block.timestamp + 2 days;
 
             accessTokens[tokenId] = AccessToken({
                 did: did,
