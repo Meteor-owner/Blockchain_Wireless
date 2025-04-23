@@ -156,7 +156,6 @@ contract IdentityManager {
      * @param publicKey 设备的公钥
      * @param name 设备名称
      * @param metadata 设备元数据哈希
-     * @param authorizer 授权者地址
      * @param signature 授权者对注册数据的签名
      */
     function registerDevice(
@@ -165,70 +164,48 @@ contract IdentityManager {
         bytes calldata publicKey,
         string calldata name,
         bytes32 metadata,
-        address authorizer,
+//        address authorizer,
         bytes calldata signature
-    ) external {
+    ) external returns (bool success, string memory message){
         require(devices[did].owner == address(0), "Device already registered");
         require(publicKey.length > 0, "Invalid public key");
 
-        // 预先计算授权者地址（系统管理员或验证的签名者）
-        address finalAuthorizer = _processAuthorization(
-            deviceType,
-            did,
-            publicKey,
-            name,
-            metadata,
-            authorizer,
-            signature
-        );
-
-        // 注册设备
-        _registerDeviceInternal(
-            deviceType,
-            did,
-            publicKey,
-            name,
-            metadata,
-            finalAuthorizer
-        );
-    }
-
-    /**
-     * @dev 处理授权验证逻辑
-     */
-    function _processAuthorization(
-        bytes32 deviceType,
-        bytes32 did,
-        bytes calldata publicKey,
-        string calldata name,
-        bytes32 metadata,
-        address authorizer,
-        bytes calldata signature
-    ) internal view returns (address) {
-        // 系统管理员可以直接注册
         if (msg.sender == systemAdmin) {
-            return systemAdmin;
+            bool deviceRegistry = _registerDeviceInternal(
+                deviceType,
+                did,
+                publicKey,
+                name,
+                metadata,
+                systemAdmin
+            );
+            if (!deviceRegistry) {
+                return (false, "Device already registried");
+            }
+            return (true, "Registration successful");
         }
+        else {
 
-        // 非管理员需要老用户签名验证
-        // 验证authorizer是否为已注册用户
-        require(registeredUsers[authorizer], "Authorizer not registered");
+            bytes32 messageHash = getSignatureMessageHash(deviceType, did, publicKey, name, metadata, msg.sender);
+            address authorizer = recoverSigner(messageHash, signature);
+            require(registeredUsers[authorizer], "Authorizer not registered");
 
-        // 计算签名消息哈希
-        bytes32 messageHash = getSignatureMessageHash(
-            deviceType,
-            did,
-            publicKey,
-            name,
-            metadata,
-            msg.sender
-        );
+            // 注册设备
+            bool deviceRegistry = _registerDeviceInternal(
+                deviceType,
+                did,
+                publicKey,
+                name,
+                metadata,
+                authorizer
+            );
 
-        // 验证签名
-        address recoveredSigner = recoverSigner(messageHash, signature);
-        require(recoveredSigner == authorizer, "Invalid signature");
+            if (!deviceRegistry) {
+                return (false, "Device already registried");
+            }
 
-        return authorizer;
+            return (true, "Registration successful");
+        }
     }
 
     /**
@@ -241,7 +218,7 @@ contract IdentityManager {
         string calldata name,
         bytes32 metadata,
         address authorizedBy
-    ) internal {
+    ) internal returns (bool){
         // 注册设备
         devices[did] = Device({
             owner: msg.sender,
@@ -272,14 +249,16 @@ contract IdentityManager {
 
         // 为网络所有者自己的设备自动授予访问权限
         bytes32[] memory ownedNetworks = ownerNetworks[msg.sender];
-        for(uint i = 0; i < ownedNetworks.length; i++) {
+        for (uint i = 0; i < ownedNetworks.length; i++) {
             deviceNetworkAccess[did][ownedNetworks[i]] = true;
             emit AccessGranted(did, ownedNetworks[i]);
         }
+
+        return (true);
     }
 
     /**
-     * @dev 验证设备注册
+     * @dev 验证设备注册（防止伪造私钥）
      * @param did 设备的分布式标识符
      * @param signature 对挑战的签名
      */
@@ -501,8 +480,8 @@ contract IdentityManager {
         AccessToken storage token = accessTokens[tokenId];
 
         return (token.tokenId == tokenId &&
-                !token.isRevoked &&
-                block.timestamp <= token.expiresAt);
+            !token.isRevoked &&
+            block.timestamp <= token.expiresAt);
     }
 
     /**
@@ -516,8 +495,8 @@ contract IdentityManager {
         require(token.tokenId == tokenId, "Token does not exist");
         require(!token.isRevoked, "Token already revoked");
         require(devices[did].owner == msg.sender ||
-                networks[tokenId].owner == msg.sender,
-                "Not authorized to revoke");
+        networks[tokenId].owner == msg.sender,
+            "Not authorized to revoke");
 
         token.isRevoked = true;
 
@@ -637,9 +616,9 @@ contract IdentityManager {
         bool success
     ) {
         require(index < authLogs[did].length, "Index out of bounds");
-        
+
         AuthLog storage log = authLogs[did][index];
-        
+
         return (
             log.verifier,
             log.challengeHash,
