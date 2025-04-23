@@ -1,22 +1,45 @@
 {
-  "name": "blockchain_proj",
+  "name": "identity-chain",
   "version": "1.0.0",
+  "description": "Blockchain-based Wireless Verification",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "node": "hardhat node",
+    "deploy:local": "hardhat run scripts/deploy.js --network localhost",
+    "deploy:sepolia": "hardhat run scripts/deploy.js --network sepolia",
+    "verify": "hardhat verify",
+    "demo": "python demo_wireless_auth.py"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": "This project demonstrates a basic Hardhat use case. It comes with a sample contract, a test for that contract, and a Hardhat Ignition module that deploys that contract.",
+  "keywords": [
+    "blockchain",
+    "wireless",
+    "authentication",
+    "identity",
+    "security",
+    "wifi",
+    "WPA2"
+  ],
+  "author": "WSA",
+  "license": "MIT",
   "devDependencies": {
-    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
-    "hardhat": "^2.23.0"
+    "@nomiclabs/hardhat-ethers": "^2.2.3",
+    "@nomiclabs/hardhat-etherscan": "^3.1.7",
+    "@nomiclabs/hardhat-waffle": "^2.0.6",
+    "@openzeppelin/contracts": "^4.9.3",
+    "@typechain/ethers-v5": "^10.2.1",
+    "@typechain/hardhat": "^6.1.6",
+    "chai": "^4.3.7",
+    "dotenv": "^16.3.1",
+    "ethereum-waffle": "^4.0.10",
+    "ethers": "^5.7.2",
+    "hardhat": "^2.17.0",
+    "hardhat-gas-reporter": "^1.0.9",
+    "solidity-coverage": "^0.8.4",
+    "typechain": "^8.3.1"
   },
   "dependencies": {
-    "dotenv": "^16.5.0"
-  },
-  "directories": {
-    "test": "test"
+    "@openzeppelin/contracts": "^4.9.3"
   }
 }

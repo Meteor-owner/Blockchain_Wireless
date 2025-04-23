@@ -14,6 +14,9 @@ contract IdentityManager {
         bytes publicKey;       // 设备公钥
         uint256 registeredAt;  // 注册时间戳
         bool isActive;         // 设备是否活跃
+        string name;           // 设备名称
+        bytes32 metadata;      // 设备元数据哈希
+        address authorizedBy;  // 授权注册的用户地址
     }
 
     // 认证记录结构
@@ -51,9 +54,10 @@ contract IdentityManager {
     mapping(bytes32 => mapping(bytes32 => bool)) private deviceNetworkAccess; // DID => 网络ID => 有无访问权限
     mapping(bytes32 => AccessToken) private accessTokens;  // 令牌ID => 访问令牌
     mapping(bytes32 => AuthLog[]) private authLogs;        // DID => 认证日志
-    
+    mapping(address => bool) private registeredUsers;      // 记录已注册用户
+
     // 事件
-    event DeviceRegistered(bytes32 indexed did, address indexed owner, bytes32 deviceType);
+    event DeviceRegistered(bytes32 indexed did, address indexed owner, bytes32 deviceType, string name, address authorizedBy);
     event DeviceDeactivated(bytes32 indexed did);
     event NetworkCreated(bytes32 indexed networkId, address indexed owner, string name);
     event AccessGranted(bytes32 indexed did, bytes32 indexed networkId);
@@ -61,28 +65,278 @@ contract IdentityManager {
     event AuthenticationAttempt(bytes32 indexed did, bytes32 indexed networkId, bool success);
     event TokenIssued(bytes32 indexed did, bytes32 indexed tokenId, uint256 expiresAt);
     event TokenRevoked(bytes32 indexed tokenId);
+    event RegistrationChallenge(bytes32 indexed did, bytes32 challenge, uint256 expiresAt);
+    event RegistrationVerified(bytes32 indexed did);
+
+    // 存储注册挑战
+    mapping(bytes32 => bytes32) private registrationChallenges;
+    mapping(bytes32 => uint256) private challengeExpiry;
+
+    // 注册验证超时时间（默认10分钟）
+    uint256 private constant CHALLENGE_TIMEOUT = 10 minutes;
+
+    // 系统管理员地址（可以直接注册而不需要授权）
+    address public systemAdmin;
 
     /**
-     * @dev 注册新设备
+     * @dev 构造函数，设置系统管理员
+     */
+    constructor() {
+        systemAdmin = msg.sender;
+        registeredUsers[msg.sender] = true;
+    }
+
+    /**
+     * @dev 修改系统管理员
+     * @param newAdmin 新的管理员地址
+     */
+    function changeSystemAdmin(address newAdmin) external {
+        require(msg.sender == systemAdmin, "Only admin can change admin");
+        require(newAdmin != address(0), "Invalid address");
+        systemAdmin = newAdmin;
+    }
+
+    /**
+     * @dev 从签名恢复签名者地址
+     * @param messageHash 消息哈希
+     * @param signature 签名
+     * @return 签名者地址
+     */
+    function recoverSigner(bytes32 messageHash, bytes memory signature) internal pure returns (address) {
+        require(signature.length == 65, "Invalid signature length");
+
+        bytes32 r;
+        bytes32 s;
+        uint8 v;
+
+        // 从签名中提取r, s, v
+        assembly {
+            r := mload(add(signature, 32))
+            s := mload(add(signature, 64))
+            v := byte(0, mload(add(signature, 96)))
+        }
+
+        // 如果是新的签名标准，需要调整v值
+        if (v < 27) {
+            v += 27;
+        }
+
+        // 恢复签名者地址
+        return ecrecover(messageHash, v, r, s);
+    }
+
+    /**
+     * @dev 构建要签名的消息哈希
      * @param deviceType 设备类型
      * @param did 设备的分布式标识符
      * @param publicKey 设备的公钥
+     * @param name 设备名称
+     * @param metadata 设备元数据哈希
+     * @param owner 设备所有者
+     * @return 消息哈希
      */
-    function registerDevice(bytes32 deviceType, bytes32 did, bytes calldata publicKey) external {
+    function getSignatureMessageHash(
+        bytes32 deviceType,
+        bytes32 did,
+        bytes memory publicKey,
+        string memory name,
+        bytes32 metadata,
+        address owner
+    ) public pure returns (bytes32) {
+        bytes32 messageHash = keccak256(abi.encodePacked(deviceType, did, publicKey, name, metadata, owner));
+
+        // 添加以太坊签名前缀（防止签名被用于其他用途）
+        return keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", messageHash));
+    }
+
+    /**
+     * @dev 注册新设备（新用户注册，需要老用户签名）
+     * @param deviceType 设备类型
+     * @param did 设备的分布式标识符
+     * @param publicKey 设备的公钥
+     * @param name 设备名称
+     * @param metadata 设备元数据哈希
+     * @param authorizer 授权者地址
+     * @param signature 授权者对注册数据的签名
+     */
+    function registerDevice(
+        bytes32 deviceType,
+        bytes32 did,
+        bytes calldata publicKey,
+        string calldata name,
+        bytes32 metadata,
+        address authorizer,
+        bytes calldata signature
+    ) external {
         require(devices[did].owner == address(0), "Device already registered");
-        
+        require(publicKey.length > 0, "Invalid public key");
+
+        // 预先计算授权者地址（系统管理员或验证的签名者）
+        address finalAuthorizer = _processAuthorization(
+            deviceType,
+            did,
+            publicKey,
+            name,
+            metadata,
+            authorizer,
+            signature
+        );
+
+        // 注册设备
+        _registerDeviceInternal(
+            deviceType,
+            did,
+            publicKey,
+            name,
+            metadata,
+            finalAuthorizer
+        );
+    }
+
+    /**
+     * @dev 处理授权验证逻辑
+     */
+    function _processAuthorization(
+        bytes32 deviceType,
+        bytes32 did,
+        bytes calldata publicKey,
+        string calldata name,
+        bytes32 metadata,
+        address authorizer,
+        bytes calldata signature
+    ) internal view returns (address) {
+        // 系统管理员可以直接注册
+        if (msg.sender == systemAdmin) {
+            return systemAdmin;
+        }
+
+        // 非管理员需要老用户签名验证
+        // 验证authorizer是否为已注册用户
+        require(registeredUsers[authorizer], "Authorizer not registered");
+
+        // 计算签名消息哈希
+        bytes32 messageHash = getSignatureMessageHash(
+            deviceType,
+            did,
+            publicKey,
+            name,
+            metadata,
+            msg.sender
+        );
+
+        // 验证签名
+        address recoveredSigner = recoverSigner(messageHash, signature);
+        require(recoveredSigner == authorizer, "Invalid signature");
+
+        return authorizer;
+    }
+
+    /**
+     * @dev 设备注册内部实现
+     */
+    function _registerDeviceInternal(
+        bytes32 deviceType,
+        bytes32 did,
+        bytes calldata publicKey,
+        string calldata name,
+        bytes32 metadata,
+        address authorizedBy
+    ) internal {
+        // 注册设备
         devices[did] = Device({
             owner: msg.sender,
             deviceType: deviceType,
             did: did,
             publicKey: publicKey,
             registeredAt: block.timestamp,
-            isActive: true
+            isActive: true,
+            name: name,
+            metadata: metadata,
+            authorizedBy: authorizedBy
         });
-        
+
+        // 更新索引
         ownerDevices[msg.sender].push(did);
-        
-        emit DeviceRegistered(did, msg.sender, deviceType);
+
+        // 标记用户为已注册用户
+        registeredUsers[msg.sender] = true;
+
+        // 为新注册的设备生成注册挑战，用于验证设备确实拥有私钥
+        bytes32 challenge = keccak256(abi.encodePacked(did, block.timestamp, blockhash(block.number - 1)));
+        registrationChallenges[did] = challenge;
+        challengeExpiry[did] = block.timestamp + CHALLENGE_TIMEOUT;
+
+        // 触发事件
+        emit DeviceRegistered(did, msg.sender, deviceType, name, authorizedBy);
+        emit RegistrationChallenge(did, challenge, challengeExpiry[did]);
+
+        // 为网络所有者自己的设备自动授予访问权限
+        bytes32[] memory ownedNetworks = ownerNetworks[msg.sender];
+        for(uint i = 0; i < ownedNetworks.length; i++) {
+            deviceNetworkAccess[did][ownedNetworks[i]] = true;
+            emit AccessGranted(did, ownedNetworks[i]);
+        }
+    }
+
+    /**
+     * @dev 验证设备注册
+     * @param did 设备的分布式标识符
+     * @param signature 对挑战的签名
+     */
+    function verifyRegistration(bytes32 did, bytes calldata signature) external {
+        require(devices[did].owner == msg.sender, "Not device owner");
+        require(block.timestamp <= challengeExpiry[did], "Challenge expired");
+        require(registrationChallenges[did] != bytes32(0), "No pending challenge");
+
+        bytes32 challenge = registrationChallenges[did];
+        bool isValid = verifySignature(did, challenge, signature);
+
+        require(isValid, "Invalid signature");
+
+        // 清除挑战
+        delete registrationChallenges[did];
+        delete challengeExpiry[did];
+
+        emit RegistrationVerified(did);
+
+        // 为验证成功的设备颁发初始访问令牌
+        issueInitialToken(did);
+    }
+
+    /**
+     * @dev 为新验证的设备颁发初始访问令牌
+     * @param did 设备的分布式标识符
+     */
+    function issueInitialToken(bytes32 did) internal returns (bytes32) {
+        // 生成令牌ID
+        bytes32 tokenId = keccak256(abi.encodePacked("initial", did, block.timestamp));
+        uint256 expiresAt = block.timestamp + 1 days; // 24小时有效期
+
+        // 创建令牌
+        accessTokens[tokenId] = AccessToken({
+            did: did,
+            tokenId: tokenId,
+            issuedAt: block.timestamp,
+            expiresAt: expiresAt,
+            isRevoked: false
+        });
+
+        emit TokenIssued(did, tokenId, expiresAt);
+
+        return tokenId;
+    }
+
+    /**
+     * @dev 获取设备的注册挑战
+     * @param did 设备的分布式标识符
+     * @return challenge 挑战值
+     * @return expiresAt 过期时间
+     */
+    function getRegistrationChallenge(bytes32 did) external view returns (bytes32 challenge, uint256 expiresAt) {
+        require(devices[did].owner == msg.sender, "Not device owner");
+        require(block.timestamp <= challengeExpiry[did], "Challenge expired");
+
+        return (registrationChallenges[did], challengeExpiry[did]);
     }
 
     /**
@@ -92,9 +346,9 @@ contract IdentityManager {
     function deactivateDevice(bytes32 did) external {
         require(devices[did].owner == msg.sender, "Not device owner");
         require(devices[did].isActive, "Device already inactive");
-        
+
         devices[did].isActive = false;
-        
+
         emit DeviceDeactivated(did);
     }
 
@@ -105,7 +359,7 @@ contract IdentityManager {
      */
     function createNetwork(bytes32 networkId, string calldata name) external {
         require(networks[networkId].owner == address(0), "Network already exists");
-        
+
         networks[networkId] = Network({
             owner: msg.sender,
             networkId: networkId,
@@ -113,9 +367,9 @@ contract IdentityManager {
             createdAt: block.timestamp,
             isActive: true
         });
-        
+
         ownerNetworks[msg.sender].push(networkId);
-        
+
         emit NetworkCreated(networkId, msg.sender, name);
     }
 
@@ -128,10 +382,27 @@ contract IdentityManager {
         require(networks[networkId].owner == msg.sender, "Not network owner");
         require(devices[did].isActive, "Device is not active");
         require(networks[networkId].isActive, "Network is not active");
-        
+
         deviceNetworkAccess[did][networkId] = true;
-        
+
         emit AccessGranted(did, networkId);
+    }
+
+    /**
+     * @dev 批量授予设备访问网络的权限
+     * @param dids 设备DID数组
+     * @param networkId 网络标识符
+     */
+    function batchGrantAccess(bytes32[] calldata dids, bytes32 networkId) external {
+        require(networks[networkId].owner == msg.sender, "Not network owner");
+        require(networks[networkId].isActive, "Network is not active");
+
+        for (uint i = 0; i < dids.length; i++) {
+            if (devices[dids[i]].isActive) {
+                deviceNetworkAccess[dids[i]][networkId] = true;
+                emit AccessGranted(dids[i], networkId);
+            }
+        }
     }
 
     /**
@@ -141,9 +412,9 @@ contract IdentityManager {
      */
     function revokeAccess(bytes32 did, bytes32 networkId) external {
         require(networks[networkId].owner == msg.sender, "Not network owner");
-        
+
         deviceNetworkAccess[did][networkId] = false;
-        
+
         emit AccessRevoked(did, networkId);
     }
 
@@ -155,9 +426,18 @@ contract IdentityManager {
      * @return 验证结果
      */
     function verifySignature(bytes32 did, bytes32 challenge, bytes calldata signature) public view returns (bool) {
-        // 在实际实现中，这里应该使用ECDSA进行签名验证
-        // 此示例简化了这一过程
-        return true; // 假设始终验证成功
+        // 实际实现中应该使用ECDSA进行签名验证
+        // 例如使用设备的公钥验证signature是否是由相应私钥对challenge签名产生的
+
+        // 以下是简化示例，实际应用中需要实现真正的ECDSA验证
+        Device storage device = devices[did];
+        require(device.owner != address(0), "Device not found");
+
+        // TODO: 实现ECDSA签名验证
+        // bytes memory publicKey = device.publicKey;
+        // return ECDSAVerify(publicKey, challenge, signature);
+
+        return true; // 示例中简化为始终返回true
     }
 
     /**
@@ -172,14 +452,14 @@ contract IdentityManager {
         require(networks[networkId].owner == msg.sender, "Not network owner or authorized AP");
         require(devices[did].isActive, "Device is not active");
         require(networks[networkId].isActive, "Network is not active");
-        
+
         bool hasAccess = deviceNetworkAccess[did][networkId];
         bool validSignature = false;
-        
+
         if (hasAccess) {
             validSignature = verifySignature(did, challenge, signature);
         }
-        
+
         // 记录认证尝试
         authLogs[did].push(AuthLog({
             did: did,
@@ -188,14 +468,14 @@ contract IdentityManager {
             timestamp: block.timestamp,
             success: validSignature && hasAccess
         }));
-        
+
         emit AuthenticationAttempt(did, networkId, validSignature && hasAccess);
-        
+
         if (validSignature && hasAccess) {
             // 发放访问令牌
             bytes32 tokenId = keccak256(abi.encodePacked(did, block.timestamp, blockhash(block.number - 1)));
             uint256 expiresAt = block.timestamp + 1 days; // 默认24小时有效期
-            
+
             accessTokens[tokenId] = AccessToken({
                 did: did,
                 tokenId: tokenId,
@@ -203,9 +483,9 @@ contract IdentityManager {
                 expiresAt: expiresAt,
                 isRevoked: false
             });
-            
+
             emit TokenIssued(did, tokenId, expiresAt);
-            
+
             return tokenId;
         } else {
             revert("Authentication failed");
@@ -219,7 +499,7 @@ contract IdentityManager {
      */
     function validateToken(bytes32 tokenId) external view returns (bool) {
         AccessToken storage token = accessTokens[tokenId];
-        
+
         return (token.tokenId == tokenId &&
                 !token.isRevoked &&
                 block.timestamp <= token.expiresAt);
@@ -232,15 +512,15 @@ contract IdentityManager {
     function revokeToken(bytes32 tokenId) external {
         AccessToken storage token = accessTokens[tokenId];
         bytes32 did = token.did;
-        
+
         require(token.tokenId == tokenId, "Token does not exist");
         require(!token.isRevoked, "Token already revoked");
-        require(devices[did].owner == msg.sender || 
-                networks[tokenId].owner == msg.sender, 
+        require(devices[did].owner == msg.sender ||
+                networks[tokenId].owner == msg.sender,
                 "Not authorized to revoke");
-        
+
         token.isRevoked = true;
-        
+
         emit TokenRevoked(tokenId);
     }
 
@@ -252,24 +532,47 @@ contract IdentityManager {
      * @return publicKey 设备公钥
      * @return registeredAt 注册时间
      * @return isActive 设备是否活跃
+     * @return name 设备名称
+     * @return metadata 设备元数据
+     * @return authorizedBy 授权注册的用户
      */
     function getDeviceInfo(bytes32 did) external view returns (
         bytes32 deviceType,
         address owner,
         bytes memory publicKey,
         uint256 registeredAt,
-        bool isActive
+        bool isActive,
+        string memory name,
+        bytes32 metadata,
+        address authorizedBy
     ) {
         Device storage device = devices[did];
         require(device.owner != address(0), "Device not found");
-        
+
         return (
             device.deviceType,
             device.owner,
             device.publicKey,
             device.registeredAt,
-            device.isActive
+            device.isActive,
+            device.name,
+            device.metadata,
+            device.authorizedBy
         );
+    }
+
+    /**
+     * @dev 更新设备信息
+     * @param did 设备的分布式标识符
+     * @param name 新的设备名称
+     * @param metadata 新的元数据哈希
+     */
+    function updateDeviceInfo(bytes32 did, string calldata name, bytes32 metadata) external {
+        require(devices[did].owner == msg.sender, "Not device owner");
+        require(devices[did].isActive, "Device is not active");
+
+        devices[did].name = name;
+        devices[did].metadata = metadata;
     }
 
     /**
@@ -288,6 +591,15 @@ contract IdentityManager {
      */
     function getOwnerNetworks(address owner) external view returns (bytes32[] memory) {
         return ownerNetworks[owner];
+    }
+
+    /**
+     * @dev 检查用户是否已注册
+     * @param user 用户地址
+     * @return 是否已注册
+     */
+    function isRegisteredUser(address user) external view returns (bool) {
+        return registeredUsers[user];
     }
 
     /**

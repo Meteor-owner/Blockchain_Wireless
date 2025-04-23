@@ -11,6 +11,7 @@ import ecdsa
 import uuid
 import base64
 import binascii
+import traceback
 from typing import Dict, List, Tuple, Any
 from web3 import Web3
 from web3.middleware import geth_poa_middleware
@@ -26,21 +27,18 @@ class IdentityChainClient:
 
     def __init__(self, network="localhost", contract_address=None):
         """初始化Web3连接和合约接口"""
-        import web3
-        web3_version = web3.__version__
-        print(f"使用Web3.py版本: {web3_version}")
-        self.web3_major_version = int(web3_version.split('.')[0])
-
-        # 根据版本差异设置属性名
-        if self.web3_major_version >= 6:
-            self.raw_tx_attr = 'raw_transaction'
-        else:
-            self.raw_tx_attr = 'rawTransaction'
-
         # 设置Web3连接
         if network == "localhost":
             self.w3 = Web3(Web3.HTTPProvider("http://127.0.0.1:8545"))
-        # ... 其他网络设置 ...
+        elif network == "sepolia":
+            # 需要在环境变量中设置 INFURA_API_KEY
+            infura_key = os.getenv("INFURA_API_KEY")
+            if not infura_key:
+                raise ValueError("使用Sepolia网络需要设置INFURA_API_KEY环境变量")
+            self.w3 = Web3(Web3.HTTPProvider(f"https://sepolia.infura.io/v3/{infura_key}"))
+            self.w3.middleware_onion.inject(geth_poa_middleware, layer=0)
+        else:
+            raise ValueError(f"不支持的网络: {network}")
 
         # 检查连接
         if not self.w3.is_connected():
@@ -99,31 +97,18 @@ class IdentityChainClient:
                 abi=self.contract_abi
             )
             print(f"成功实例化合约: {self.contract_address}")
-
-            # 验证合约有效性
-            try:
-                # 尝试调用一个简单的view函数来验证合约
-                # 例如，如果合约有一个简单的函数，如getOwnerNetworks
-                test_call = self.contract.functions.getOwnerNetworks(
-                    self.account.address
-                ).call()
-                print(f"合约验证成功: {test_call}")
-            except Exception as e:
-                print(f"合约验证警告(不一定是错误): {str(e)}")
         except Exception as e:
             raise ValueError(f"实例化合约失败: {str(e)}")
 
     def create_did(self, device_type: str, uuid_val: str = None) -> Dict:
         """创建分布式标识符(DID)"""
         if not uuid_val:
-            import uuid
             uuid_val = str(uuid.uuid4())
 
         # 创建DID
         did = f"did:identity-chain:{uuid_val}"
 
         # 使用SHA-256确保得到32字节长度
-        import hashlib
         did_hash = hashlib.sha256(did.encode()).digest()
 
         # 将设备类型转换为bytes32
@@ -135,15 +120,15 @@ class IdentityChainClient:
             'did_bytes32': "0x" + did_hash.hex(),
             'device_type_bytes32': device_type_hex
         }
-    
+
     def generate_keys(self) -> Dict[str, str]:
         """生成ECDSA密钥对"""
         private_key = ecdsa.SigningKey.generate(curve=ecdsa.SECP256k1)
         public_key = private_key.get_verifying_key()
-        
+
         private_key_hex = private_key.to_string().hex()
         public_key_hex = public_key.to_string().hex()
-        
+
         return {
             'private_key': private_key_hex,
             'public_key': public_key_hex,
@@ -151,24 +136,103 @@ class IdentityChainClient:
             'public_key_obj': public_key
         }
 
-    def register_device(self, device_type: str, did_info: Dict, keys: Dict) -> Dict:
+    def create_network(self, network_name: str) -> Dict:
+        """创建新的无线网络"""
+        try:
+            # 生成网络ID
+            network_id = f"net:{uuid.uuid4()}"
+
+            # 转换为bytes32
+            network_id_hash = hashlib.sha256(network_id.encode()).digest()
+            network_id_bytes32 = "0x" + network_id_hash.hex()
+
+            # 构建交易
+            tx = self.contract.functions.createNetwork(
+                self.w3.to_bytes(hexstr=network_id_bytes32),
+                network_name
+            ).build_transaction({
+                'from': self.account.address,
+                'nonce': self.w3.eth.get_transaction_count(self.account.address),
+                'gas': 300000,
+                'gasPrice': self.w3.eth.gas_price
+            })
+
+            # 签名交易
+            signed_tx = self.w3.eth.account.sign_transaction(tx, self.account.key)
+
+            # 发送交易 - 处理不同版本的Web3.py
+            tx_hash = None
+            if hasattr(signed_tx, 'rawTransaction'):
+                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+            elif hasattr(signed_tx, 'raw_transaction'):
+                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+            else:
+                # 尝试直接获取
+                try:
+                    tx_hash = self.w3.eth.send_raw_transaction(signed_tx['rawTransaction'])
+                except:
+                    tx_hash = self.w3.eth.send_raw_transaction(signed_tx)
+
+            # 等待交易确认
+            tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
+
+            result = {
+                'success': tx_receipt.status == 1,
+                'tx_hash': self.w3.to_hex(tx_hash),
+                'block_number': tx_receipt.blockNumber
+            }
+
+            if result['success']:
+                result['network_id'] = network_id
+                result['network_id_bytes32'] = network_id_bytes32
+                result['network_name'] = network_name
+
+            return result
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e),
+                'traceback': traceback.format_exc()
+            }
+
+    def register_device(self, device_type: str, did_info: Dict, keys: Dict,
+                        name: str = "", metadata: str = "") -> Dict:
         """注册设备到区块链"""
         try:
-            # 参数类型检查和打印
-            device_type_bytes = self.w3.to_bytes(hexstr=did_info['device_type_bytes32'])
+            # 确保device_type是bytes32类型
+            if isinstance(device_type, str):
+                device_type_bytes = self.w3.to_bytes(text=device_type).ljust(32, b'\0')
+            else:
+                device_type_bytes = self.w3.to_bytes(hexstr=device_type).ljust(32, b'\0')
+
+            # 确保DID是bytes32类型
             did_bytes32 = self.w3.to_bytes(hexstr=did_info['did_bytes32'])
+
+            # 准备公钥 (这已经是bytes类型)
             public_key_bytes = bytes.fromhex(keys['public_key'])
 
-            print(f"参数类型检查:")
-            print(f"- device_type_bytes: {type(device_type_bytes)}, 长度: {len(device_type_bytes)}")
-            print(f"- did_bytes32: {type(did_bytes32)}, 长度: {len(did_bytes32)}")
-            print(f"- public_key_bytes: {type(public_key_bytes)}, 长度: {len(public_key_bytes)}")
+            # 处理设备名称和元数据
+            if not name:
+                name = f"{device_type}_{uuid.uuid4().hex[:8]}"
+
+            # 创建元数据哈希
+            if not metadata:
+                metadata = f"metadata_{uuid.uuid4().hex}"
+            metadata_bytes32 = self.w3.to_bytes(text=metadata).ljust(32, b'\0')
+
+            # 这里假设系统管理员直接授权注册
+            authorizer_address = self.account.address
+            signature = b''
 
             # 构建交易
             tx = self.contract.functions.registerDevice(
-                device_type_bytes,  # 确保是bytes32
-                did_bytes32,  # 确保是bytes32
-                public_key_bytes  # 这是bytes类型
+                device_type_bytes,         # 设备类型 (bytes32)
+                did_bytes32,               # 设备DID (bytes32)
+                public_key_bytes,          # 公钥 (bytes)
+                name,                      # 设备名称 (string)
+                metadata_bytes32,          # 元数据哈希 (bytes32)
+                authorizer_address,        # 授权者地址 (address)
+                signature                  # 空签名，因为我们假设以管理员身份调用
             ).build_transaction({
                 'from': self.account.address,
                 'nonce': self.w3.eth.get_transaction_count(self.account.address),
@@ -179,12 +243,18 @@ class IdentityChainClient:
             # 签名交易
             signed_tx = self.w3.eth.account.sign_transaction(tx, self.account.key)
 
-            # 直接使用 rawTransaction 属性 - web3.py 中最常见的属性名
-            tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
-
-            # 如果上面的行出错，你可以尝试检查 signed_tx 对象的所有属性
-            # import inspect
-            # print("签名交易对象的属性:", dir(signed_tx))
+            # 发送交易 - 处理不同版本的Web3.py
+            tx_hash = None
+            if hasattr(signed_tx, 'rawTransaction'):
+                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+            elif hasattr(signed_tx, 'raw_transaction'):
+                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+            else:
+                # 尝试直接获取
+                try:
+                    tx_hash = self.w3.eth.send_raw_transaction(signed_tx['rawTransaction'])
+                except:
+                    tx_hash = self.w3.eth.send_raw_transaction(signed_tx)
 
             # 等待交易确认
             tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
@@ -193,109 +263,17 @@ class IdentityChainClient:
                 'success': tx_receipt.status == 1,
                 'tx_hash': self.w3.to_hex(tx_hash),
                 'block_number': tx_receipt.blockNumber,
-                'gas_used': tx_receipt.gasUsed
+                'gas_used': tx_receipt.gasUsed,
+                'device_name': name,
+                'metadata': metadata
             }
         except Exception as e:
-            import traceback
-            print(f"注册设备时发生错误: {str(e)}")
-            print(traceback.format_exc())
             return {
                 'success': False,
                 'error': str(e),
                 'traceback': traceback.format_exc()
             }
-    # def register_device(self, device_type: str, did_info: Dict, keys: Dict) -> Dict:
-    #     """注册设备到区块链"""
-    #     try:
-    #         # 确保device_type是bytes32类型
-    #         if isinstance(device_type, str):
-    #             # 将设备类型转换为bytes32
-    #             device_type_bytes = self.w3.to_bytes(text=device_type).ljust(32, b'\0')
-    #         else:
-    #             device_type_bytes = self.w3.to_bytes(hexstr=device_type).ljust(32, b'\0')
-    #
-    #         # 确保DID是bytes32类型
-    #         did_bytes32 = self.w3.to_bytes(hexstr=did_info['did_bytes32'])
-    #
-    #         # 准备公钥 (这已经是bytes类型)
-    #         public_key_bytes = bytes.fromhex(keys['public_key'])
-    #
-    #         print(f"参数类型检查:")
-    #         print(f"- device_type_bytes: {type(device_type_bytes)}, 长度: {len(device_type_bytes)}")
-    #         print(f"- did_bytes32: {type(did_bytes32)}, 长度: {len(did_bytes32)}")
-    #         print(f"- public_key_bytes: {type(public_key_bytes)}, 长度: {len(public_key_bytes)}")
-    #
-    #         # 构建交易
-    #         tx = self.contract.functions.registerDevice(
-    #             device_type_bytes,  # 确保是bytes32
-    #             did_bytes32,  # 确保是bytes32
-    #             public_key_bytes  # 这是bytes类型
-    #         ).build_transaction({
-    #             'from': self.account.address,
-    #             'nonce': self.w3.eth.get_transaction_count(self.account.address),
-    #             'gas': 500000,
-    #             'gasPrice': self.w3.eth.gas_price
-    #         })
-    #
-    #         # 签名交易
-    #         signed_tx = self.w3.eth.account.sign_transaction(tx, self.account.key)
-    #
-    #         # 使用动态属性获取raw_transaction
-    #         raw_tx = getattr(signed_tx, self.raw_tx_attr)
-    #
-    #         # 发送交易
-    #         tx_hash = self.w3.eth.send_raw_transaction(raw_tx)
-    #
-    #         # 等待交易确认
-    #         tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
-    #
-    #         return {
-    #             'success': tx_receipt.status == 1,
-    #             'tx_hash': self.w3.to_hex(tx_hash),
-    #             'block_number': tx_receipt.blockNumber,
-    #             'gas_used': tx_receipt.gasUsed
-    #         }
-    #     except Exception as e:
-    #         import traceback
-    #         print(f"注册设备时发生错误: {str(e)}")
-    #         print(traceback.format_exc())
-    #         return {
-    #             'success': False,
-    #             'error': str(e),
-    #             'traceback': traceback.format_exc()
-    #         }
 
-    def create_network(self, network_name: str) -> Dict:
-        """创建新的无线网络"""
-        try:
-            # 生成网络ID
-            network_id = f"net:{uuid.uuid4()}"
-
-            # 转换为bytes32
-            import hashlib
-            network_id_hash = hashlib.sha256(network_id.encode()).digest()
-            network_id_bytes32 = "0x" + network_id_hash.hex()
-
-            # 使用通用函数发送交易
-            result = self.send_transaction(
-                self.contract.functions.createNetwork,
-                Web3.to_bytes(hexstr=network_id_bytes32),
-                network_name
-            )
-
-            if result['success']:
-                result['network_id'] = network_id
-                result['network_id_bytes32'] = network_id_bytes32
-
-            return result
-        except Exception as e:
-            import traceback
-            return {
-                'success': False,
-                'error': str(e),
-                'traceback': traceback.format_exc()
-            }
-    
     def grant_access(self, did_bytes32: str, network_id_bytes32: str) -> Dict:
         """授予设备访问网络的权限"""
         try:
@@ -309,18 +287,26 @@ class IdentityChainClient:
                 'gas': 300000,
                 'gasPrice': self.w3.eth.gas_price
             })
-            
+
             # 签名交易
             signed_tx = self.w3.eth.account.sign_transaction(tx, self.account.key)
-            
-            # 发送交易
-            tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
-            # raw_tx = getattr(signed_tx, self.raw_tx_attr)
-            # tx_hash = self.w3.eth.send_raw_transaction(raw_tx)
+
+            # 发送交易 - 处理不同版本的Web3.py
+            tx_hash = None
+            if hasattr(signed_tx, 'rawTransaction'):
+                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+            elif hasattr(signed_tx, 'raw_transaction'):
+                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+            else:
+                # 尝试直接获取
+                try:
+                    tx_hash = self.w3.eth.send_raw_transaction(signed_tx['rawTransaction'])
+                except:
+                    tx_hash = self.w3.eth.send_raw_transaction(signed_tx)
 
             # 等待交易确认
             tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
-            
+
             return {
                 'success': tx_receipt.status == 1,
                 'tx_hash': self.w3.to_hex(tx_hash),
@@ -331,7 +317,7 @@ class IdentityChainClient:
                 'success': False,
                 'error': str(e)
             }
-    
+
     def revoke_access(self, did_bytes32: str, network_id_bytes32: str) -> Dict:
         """撤销设备访问网络的权限"""
         try:
@@ -345,18 +331,26 @@ class IdentityChainClient:
                 'gas': 300000,
                 'gasPrice': self.w3.eth.gas_price
             })
-            
+
             # 签名交易
             signed_tx = self.w3.eth.account.sign_transaction(tx, self.account.key)
-            
-            # 发送交易
-            tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
-            # raw_tx = getattr(signed_tx, self.raw_tx_attr)
-            # tx_hash = self.w3.eth.send_raw_transaction(raw_tx)
+
+            # 发送交易 - 处理不同版本的Web3.py
+            tx_hash = None
+            if hasattr(signed_tx, 'rawTransaction'):
+                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+            elif hasattr(signed_tx, 'raw_transaction'):
+                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+            else:
+                # 尝试直接获取
+                try:
+                    tx_hash = self.w3.eth.send_raw_transaction(signed_tx['rawTransaction'])
+                except:
+                    tx_hash = self.w3.eth.send_raw_transaction(signed_tx)
 
             # 等待交易确认
             tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
-            
+
             return {
                 'success': tx_receipt.status == 1,
                 'tx_hash': self.w3.to_hex(tx_hash),
@@ -367,19 +361,19 @@ class IdentityChainClient:
                 'success': False,
                 'error': str(e)
             }
-    
+
     def sign_challenge(self, private_key_hex: str, challenge: str) -> str:
         """使用私钥签名挑战"""
         try:
             # 将私钥转换为对象
             private_key = ecdsa.SigningKey.from_string(
-                bytes.fromhex(private_key_hex), 
+                bytes.fromhex(private_key_hex),
                 curve=ecdsa.SECP256k1
             )
-            
+
             # 签名挑战
             signature = private_key.sign(challenge.encode())
-            
+
             return signature.hex()
         except Exception as e:
             print(f"签名失败: {str(e)}")
@@ -388,20 +382,37 @@ class IdentityChainClient:
     def authenticate(self, did_bytes32: str, network_id_bytes32: str, challenge: str, signature: str) -> Dict:
         """验证设备并获取访问令牌"""
         try:
+            # 将did和network_id确保为bytes32
+            did_bytes32_bytes = self.w3.to_bytes(hexstr=did_bytes32).ljust(32, b'\0')
+            network_id_bytes32_bytes = self.w3.to_bytes(hexstr=network_id_bytes32).ljust(32, b'\0')
+
             # 将挑战转换为bytes32
-            did_bytes = self.to_bytes32(did_bytes32)
-            network_bytes = self.to_bytes32(network_id_bytes32)
-            challenge_bytes = self.to_bytes32(challenge, is_hex=False)
+            # 如果challenge已经是十六进制，则直接转换
+            if challenge.startswith('0x'):
+                challenge_bytes32 = self.w3.to_bytes(hexstr=challenge).ljust(32, b'\0')
+            else:
+                # 否则先进行哈希处理，确保长度为32字节
+                challenge_hash = hashlib.sha256(challenge.encode()).digest()
+                challenge_bytes32 = challenge_hash
 
             # 将签名转换为bytes
-            signature_bytes = bytes.fromhex(signature)
+            if signature.startswith('0x'):
+                signature_bytes = self.w3.to_bytes(hexstr=signature)
+            else:
+                signature_bytes = bytes.fromhex(signature)
+
+            print(f"认证参数类型:")
+            print(f"- did_bytes32: {type(did_bytes32_bytes)}, 长度: {len(did_bytes32_bytes)}")
+            print(f"- network_id_bytes32: {type(network_id_bytes32_bytes)}, 长度: {len(network_id_bytes32_bytes)}")
+            print(f"- challenge_bytes32: {type(challenge_bytes32)}, 长度: {len(challenge_bytes32)}")
+            print(f"- signature_bytes: {type(signature_bytes)}, 长度: {len(signature_bytes)}")
 
             # 构建交易
             tx = self.contract.functions.authenticate(
-                did_bytes,
-                network_bytes,
-                challenge_bytes,
-                signature_bytes
+                did_bytes32_bytes,  # 确保是32字节长度
+                network_id_bytes32_bytes,  # 确保是32字节长度
+                challenge_bytes32,  # 确保是32字节长度
+                signature_bytes  # 签名不需要严格长度
             ).build_transaction({
                 'from': self.account.address,
                 'nonce': self.w3.eth.get_transaction_count(self.account.address),
@@ -412,10 +423,18 @@ class IdentityChainClient:
             # 签名交易
             signed_tx = self.w3.eth.account.sign_transaction(tx, self.account.key)
 
-            # 发送交易
-            tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
-            # raw_tx = getattr(signed_tx, self.raw_tx_attr)
-            # tx_hash = self.w3.eth.send_raw_transaction(raw_tx)
+            # 发送交易 - 处理不同版本的Web3.py
+            tx_hash = None
+            if hasattr(signed_tx, 'rawTransaction'):
+                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+            elif hasattr(signed_tx, 'raw_transaction'):
+                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+            else:
+                # 尝试直接获取
+                try:
+                    tx_hash = self.w3.eth.send_raw_transaction(signed_tx['rawTransaction'])
+                except:
+                    tx_hash = self.w3.eth.send_raw_transaction(signed_tx)
 
             # 等待交易确认
             tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
@@ -436,9 +455,10 @@ class IdentityChainClient:
         except Exception as e:
             return {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'traceback': traceback.format_exc()
             }
-    
+
     def validate_token(self, token_id: str) -> Dict:
         """验证访问令牌是否有效"""
         try:
@@ -446,7 +466,7 @@ class IdentityChainClient:
             is_valid = self.contract.functions.validateToken(
                 self.w3.to_bytes(hexstr=token_id)
             ).call({'from': self.account.address})
-            
+
             return {
                 'valid': is_valid
             }
@@ -455,7 +475,7 @@ class IdentityChainClient:
                 'valid': False,
                 'error': str(e)
             }
-    
+
     def revoke_token(self, token_id: str) -> Dict:
         """撤销访问令牌"""
         try:
@@ -468,18 +488,26 @@ class IdentityChainClient:
                 'gas': 300000,
                 'gasPrice': self.w3.eth.gas_price
             })
-            
+
             # 签名交易
             signed_tx = self.w3.eth.account.sign_transaction(tx, self.account.key)
-            
-            # 发送交易
-            tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
-            # raw_tx = getattr(signed_tx, self.raw_tx_attr)
-            # tx_hash = self.w3.eth.send_raw_transaction(raw_tx)
+
+            # 发送交易 - 处理不同版本的Web3.py
+            tx_hash = None
+            if hasattr(signed_tx, 'rawTransaction'):
+                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+            elif hasattr(signed_tx, 'raw_transaction'):
+                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+            else:
+                # 尝试直接获取
+                try:
+                    tx_hash = self.w3.eth.send_raw_transaction(signed_tx['rawTransaction'])
+                except:
+                    tx_hash = self.w3.eth.send_raw_transaction(signed_tx)
 
             # 等待交易确认
             tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
-            
+
             return {
                 'success': tx_receipt.status == 1,
                 'tx_hash': self.w3.to_hex(tx_hash),
@@ -490,7 +518,7 @@ class IdentityChainClient:
                 'success': False,
                 'error': str(e)
             }
-    
+
     def get_device_info(self, did_bytes32: str) -> Dict:
         """获取设备信息"""
         try:
@@ -498,30 +526,33 @@ class IdentityChainClient:
             device_info = self.contract.functions.getDeviceInfo(
                 self.w3.to_bytes(hexstr=did_bytes32)
             ).call({'from': self.account.address})
-            
+
             return {
                 'success': True,
                 'device_type': self.w3.to_text(device_info[0]).rstrip('\x00'),
                 'owner': device_info[1],
                 'public_key': device_info[2].hex(),
                 'registered_at': device_info[3],
-                'is_active': device_info[4]
+                'is_active': device_info[4],
+                'name': device_info[5],
+                'metadata': self.w3.to_hex(device_info[6]),
+                'authorized_by': device_info[7]
             }
         except Exception as e:
             return {
                 'success': False,
                 'error': str(e)
             }
-    
+
     def check_access(self, did_bytes32: str, network_id_bytes32: str) -> Dict:
-        """检查设备是否有访问网络的权限"""
+        """检查设备是否有权访问网络"""
         try:
             # 调用合约方法
             has_access = self.contract.functions.checkAccess(
                 self.w3.to_bytes(hexstr=did_bytes32),
                 self.w3.to_bytes(hexstr=network_id_bytes32)
             ).call({'from': self.account.address})
-            
+
             return {
                 'success': True,
                 'has_access': has_access
@@ -531,7 +562,7 @@ class IdentityChainClient:
                 'success': False,
                 'error': str(e)
             }
-    
+
     def get_auth_logs(self, did_bytes32: str) -> Dict:
         """获取设备的认证日志"""
         try:
@@ -539,21 +570,21 @@ class IdentityChainClient:
             log_count = self.contract.functions.getAuthLogCount(
                 self.w3.to_bytes(hexstr=did_bytes32)
             ).call({'from': self.account.address})
-            
+
             logs = []
             for i in range(log_count):
                 log_info = self.contract.functions.getAuthLog(
                     self.w3.to_bytes(hexstr=did_bytes32),
                     i
                 ).call({'from': self.account.address})
-                
+
                 logs.append({
                     'verifier': log_info[0],
                     'challenge_hash': self.w3.to_hex(log_info[1]),
                     'timestamp': log_info[2],
                     'success': log_info[3]
                 })
-            
+
             return {
                 'success': True,
                 'log_count': log_count,
@@ -564,75 +595,3 @@ class IdentityChainClient:
                 'success': False,
                 'error': str(e)
             }
-
-    def send_transaction(self, tx_func, *args, **kwargs):
-        """通用的交易发送函数，处理不同版本的Web3.py"""
-        try:
-            # 构建交易
-            tx = tx_func(*args, **kwargs).build_transaction({
-                'from': self.account.address,
-                'nonce': self.w3.eth.get_transaction_count(self.account.address),
-                'gas': kwargs.get('gas', 500000),
-                'gasPrice': self.w3.eth.gas_price
-            })
-
-            # 签名交易
-            signed_tx = self.w3.eth.account.sign_transaction(tx, self.account.key)
-
-            # 兼容性处理
-            if hasattr(signed_tx, 'rawTransaction'):
-                raw_tx = signed_tx.rawTransaction  # Web3.py v5
-            else:
-                raw_tx = signed_tx.raw_transaction  # Web3.py v6
-
-            # 发送交易
-            tx_hash = self.w3.eth.send_raw_transaction(raw_tx)
-
-            # 等待交易确认
-            tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
-
-            return {
-                'success': tx_receipt.status == 1,
-                'tx_hash': self.w3.to_hex(tx_hash),
-                'receipt': tx_receipt,
-                'block_number': tx_receipt.blockNumber
-            }
-        except Exception as e:
-            import traceback
-            return {
-                'success': False,
-                'error': str(e),
-                'traceback': traceback.format_exc()
-            }
-
-    def to_bytes32(self, value, is_hex=True):
-        """将值转换为bytes32格式
-
-        Args:
-            value: 要转换的值，可以是16进制字符串或普通文本
-            is_hex: 是否是16进制字符串，如果是则使用to_bytes(hexstr=)，否则使用to_bytes(text=)
-
-        Returns:
-            bytes: 固定32字节长度的bytes对象
-        """
-        try:
-            if is_hex:
-                # 如果是十六进制字符串，确保有0x前缀
-                if isinstance(value, str) and not value.startswith('0x'):
-                    value = '0x' + value
-                result = self.w3.to_bytes(hexstr=value)
-            else:
-                # 如果是普通文本
-                result = self.w3.to_bytes(text=value)
-
-            # 如果长度超过32字节，使用SHA256哈希
-            if len(result) > 32:
-                print(f"值长度({len(result)}字节)超过32字节，使用SHA256哈希转换")
-                import hashlib
-                result = hashlib.sha256(result).digest()  # 这将产生一个32字节的哈希
-
-            # 确保长度是32字节（如果短于32字节则填充）
-            return result.ljust(32, b'\0')
-        except Exception as e:
-            print(f"转换为bytes32时出错: {str(e)}")
-            raise
