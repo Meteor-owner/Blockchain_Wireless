@@ -22,6 +22,7 @@ from dotenv import load_dotenv
 # 加载环境变量
 load_dotenv()
 
+
 class IdentityChainClient:
     """与IdentityManager智能合约的Python接口"""
 
@@ -226,12 +227,12 @@ class IdentityChainClient:
 
             # 构建交易
             tx = self.contract.functions.registerDevice(
-                device_type_bytes,         # 设备类型 (bytes32)
-                did_bytes32,               # 设备DID (bytes32)
-                public_key_bytes,          # 公钥 (bytes)
-                name,                      # 设备名称 (string)
-                metadata_bytes32,          # 元数据哈希 (bytes32)
-                signature                  # 空签名，因为我们假设以管理员身份调用
+                device_type_bytes,  # 设备类型 (bytes32)
+                did_bytes32,  # 设备DID (bytes32)
+                public_key_bytes,  # 公钥 (bytes)
+                name,  # 设备名称 (string)
+                metadata_bytes32,  # 元数据哈希 (bytes32)
+                signature  # 空签名，因为我们假设以管理员身份调用
             ).build_transaction({
                 'from': self.account.address,
                 'nonce': self.w3.eth.get_transaction_count(self.account.address),
@@ -361,50 +362,49 @@ class IdentityChainClient:
                 'error': str(e)
             }
 
-    # def sign_challenge(self, private_key_hex: str, challenge: str) -> str:
-    #     """使用私钥签名挑战，生成以太坊风格的签名"""
-    #     try:
-    #         # 如果challenge是十六进制字符串，转换为bytes
-    #         if challenge.startswith('0x'):
-    #             challenge_bytes = bytes.fromhex(challenge[2:])
-    #         else:
-    #             # 否则假设是普通字符串，先哈希确保长度一致
-    #             challenge_bytes = hashlib.sha256(challenge.encode()).digest()
-    #
-    #         # 使用eth_account库进行以太坊风格的签名
-    #         private_key = "0x" + private_key_hex if not private_key_hex.startswith('0x') else private_key_hex
-    #         account = Account.from_key(private_key)
-    #
-    #         # 创建以太坊签名消息
-    #         message = encode_defunct(primitive=challenge_bytes)
-    #
-    #         # 签名消息
-    #         signed_message = account.sign_message(message)
-    #
-    #         signature = signed_message.signature
-    #         print(f"签名长度: {len(signature)} 字节")
-    #         print(f"签名内容: {signature.hex()}")
-    #         # 返回包含r、s、v的完整签名（65字节）
-    #         return signed_message.signature.hex()
-    #     except Exception as e:
-    #         print(f"签名失败: {str(e)}")
-    #         traceback.print_exc()
-    #         return ""
-    def sign_challenge(self, private_key_hex: str, challenge: str) -> str:
-        """使用私钥签名挑战"""
+    def sign_challenge(self, private_key_hex: str, did_bytes32: str, challenge: str) -> str:
+        """使用私钥签名挑战，生成以太坊风格的签名"""
         try:
-            # 将私钥转换为对象
-            private_key = ecdsa.SigningKey.from_string(
-                bytes.fromhex(private_key_hex),
-                curve=ecdsa.SECP256k1
-            )
+            # 确保私钥格式正确
+            if not private_key_hex.startswith('0x'):
+                private_key = f"0x{private_key_hex}"
+            else:
+                private_key = private_key_hex
 
-            # 签名挑战
-            signature = private_key.sign(challenge.encode())
+            # 确保DID是bytes32格式
+            if did_bytes32.startswith('0x'):
+                did_bytes = bytes.fromhex(did_bytes32[2:])
+            else:
+                did_bytes = bytes.fromhex(did_bytes32)
 
-            return signature.hex()
+            # 确保challenge是bytes32格式
+            if challenge.startswith('0x'):
+                challenge_bytes = bytes.fromhex(challenge[2:])
+            else:
+                challenge_bytes = bytes.fromhex(challenge)
+
+            # 按照合约中的逻辑构建消息哈希
+            # 首先拼接DID和挑战值
+            message_bytes = did_bytes + challenge_bytes
+            # 计算keccak256哈希
+            message_hash = Web3.keccak(message_bytes)
+
+            # 创建以太坊签名消息
+            eth_message = encode_defunct(primitive=message_hash)
+
+            # 使用私钥签名
+            account = Account.from_key(private_key)
+            signed_message = account.sign_message(eth_message)
+
+            print(f"签名消息哈希: {message_hash.hex()}")
+            print(f"签名结果: {signed_message.signature.hex()}")
+            print(f"签名长度: {len(signed_message.signature)} 字节")
+
+            # 返回签名结果
+            return signed_message.signature.hex()
         except Exception as e:
             print(f"签名失败: {str(e)}")
+            traceback.print_exc()
             return ""
 
     def generate_auth_challenge(self, did_bytes32: str, network_id_bytes32: str) -> Dict:
@@ -484,8 +484,8 @@ class IdentityChainClient:
             print(f"认证参数类型:")
             print(f"- did_bytes32: {type(did_bytes32_bytes)}, 长度: {len(did_bytes32_bytes)}")
             print(f"- network_id_bytes32: {type(network_id_bytes32_bytes)}, 长度: {len(network_id_bytes32_bytes)}")
-            print(f"- challenge_bytes32: {type(challenge_bytes32)}, 长度: {len(challenge_bytes32)}")
-            print(f"- signature_bytes: {type(signature_bytes.hex())}, 长度: {len(signature_bytes)}")
+            print(f"- challenge_bytes32: {challenge_bytes32}, 长度: {len(challenge_bytes32)}")
+            print(f"- signature_bytes: {signature_bytes.hex()}, 长度: {len(signature_bytes)}")
 
             gas_estimate = self.contract.functions.authenticate(
                 did_bytes32_bytes,  # 确保是32字节长度
@@ -496,6 +496,7 @@ class IdentityChainClient:
 
             print(f"估计需要的gas: {gas_estimate}")
             gas_with_buffer = int(gas_estimate * 1.5)
+
             # 构建交易
             tx = self.contract.functions.authenticate(
                 did_bytes32_bytes,

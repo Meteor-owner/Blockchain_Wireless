@@ -80,7 +80,7 @@ async function main() {
 
   // 如果是测试网，生成Python接口调用示例
   if (["goerli", "sepolia", "localhost"].includes(hre.network.name)) {
-    generatePythonExample(identityManager.address, hre.network.name);
+    // generatePythonExample(identityManager.address, hre.network.name);
   }
 
   // 如果是主网或测试网，验证合约
@@ -101,108 +101,6 @@ async function main() {
       console.error("合约验证失败:", error);
     }
   }
-}
-
-function generatePythonExample(contractAddress, network) {
-  const exampleCode = `"""
-区块链无线网络身份验证系统 - 部署测试脚本
-CSEC5615 云安全项目
-"""
-
-import os
-import json
-from web3 import Web3
-from eth_account import Account
-from dotenv import load_dotenv
-
-# 加载环境变量
-load_dotenv()
-
-# 连接到区块链网络
-def connect_to_network():
-    network = "${network}"
-    if network == "localhost":
-        w3 = Web3(Web3.HTTPProvider("http://127.0.0.1:8545"))
-    elif network == "goerli":
-        infura_key = os.getenv("INFURA_KEY")
-        w3 = Web3(Web3.HTTPProvider(f"https://goerli.infura.io/v3/{infura_key}"))
-    elif network == "sepolia":
-        infura_key = os.getenv("INFURA_KEY")
-        w3 = Web3(Web3.HTTPProvider(f"https://sepolia.infura.io/v3/{infura_key}"))
-    else:
-        raise ValueError(f"不支持的网络: {network}")
-        
-    if not w3.is_connected():
-        raise ConnectionError(f"无法连接到 {network} 网络")
-    
-    print(f"成功连接到 {network} 网络")
-    return w3
-
-# 加载合约
-def load_contract(w3):
-    contract_address = "${contractAddress}"
-    
-    # 加载ABI
-    abi_file = "./artifacts/contracts/IdentityManager.sol/IdentityManager.json"
-    with open(abi_file, 'r') as f:
-        contract_json = json.load(f)
-        contract_abi = contract_json['abi']
-    
-    # 实例化合约
-    contract = w3.eth.contract(
-        address=Web3.to_checksum_address(contract_address),
-        abi=contract_abi
-    )
-    
-    return contract
-
-# 主函数
-def main():
-    try:
-        # 连接网络
-        w3 = connect_to_network()
-        
-        # 加载账户
-        private_key = os.getenv("PRIVATE_KEY")
-        if not private_key:
-            raise ValueError("未找到PRIVATE_KEY环境变量")
-        
-        if not private_key.startswith("0x"):
-            private_key = f"0x{private_key}"
-        
-        account = Account.from_key(private_key)
-        print(f"使用账户: {account.address}")
-        
-        # 加载合约
-        contract = load_contract(w3)
-        print(f"成功加载合约")
-        
-        # 检查系统管理员
-        system_admin = contract.functions.systemAdmin().call()
-        print(f"系统管理员: {system_admin}")
-        
-        # 检查当前账户是否为已注册用户
-        is_registered = contract.functions.isRegisteredUser(account.address).call()
-        print(f"当前账户是否已注册: {is_registered}")
-        
-        print("部署测试完成!")
-        
-    except Exception as e:
-        print(f"错误: {str(e)}")
-
-if __name__ == "__main__":
-    main()
-`;
-
-  const exampleDir = "./scripts";
-  if (!fs.existsSync(exampleDir)) {
-    fs.mkdirSync(exampleDir);
-  }
-
-  const exampleFilePath = path.join(exampleDir, "test_deployment.py");
-  fs.writeFileSync(exampleFilePath, exampleCode);
-
-  console.log("生成Python测试脚本:", exampleFilePath);
 }
 
 // 执行部署脚本

@@ -176,7 +176,7 @@ def run_demo():
                 f"挑战过期时间: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(challenge_result['expires_at']))}")
 
             # 设备签名挑战
-            signature = client.sign_challenge(device['keys']['private_key'], challenge)
+            signature = client.sign_challenge(device['keys']['private_key'], device['did_bytes32'], challenge)
             print_info(f"设备签名挑战: {signature[:20]}...")
 
             # 验证设备并获取令牌
@@ -199,7 +199,7 @@ def run_demo():
         else:
             print_error(f"生成挑战失败")
             print_info(f"错误: {challenge_result.get('error', '未知错误')}")
-def demo2():
+# def demo2():
     # 步骤5: 更新设备信息
     print_section("步骤5: 更新设备信息")
     if len(devices) > 0:
@@ -277,7 +277,7 @@ def demo2():
             print_info("\n尝试重放攻击 - 使用相同的挑战值...")
 
             # 先用合法签名获取正确签名
-            valid_signature = client.sign_challenge(device['keys']['private_key'], challenge)
+            valid_signature = client.sign_challenge(device['keys']['private_key'], device['did_bytes32'], challenge)
 
             # 首次认证
             try:
