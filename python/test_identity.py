@@ -361,6 +361,35 @@ class IdentityChainClient:
                 'error': str(e)
             }
 
+    # def sign_challenge(self, private_key_hex: str, challenge: str) -> str:
+    #     """使用私钥签名挑战，生成以太坊风格的签名"""
+    #     try:
+    #         # 如果challenge是十六进制字符串，转换为bytes
+    #         if challenge.startswith('0x'):
+    #             challenge_bytes = bytes.fromhex(challenge[2:])
+    #         else:
+    #             # 否则假设是普通字符串，先哈希确保长度一致
+    #             challenge_bytes = hashlib.sha256(challenge.encode()).digest()
+    #
+    #         # 使用eth_account库进行以太坊风格的签名
+    #         private_key = "0x" + private_key_hex if not private_key_hex.startswith('0x') else private_key_hex
+    #         account = Account.from_key(private_key)
+    #
+    #         # 创建以太坊签名消息
+    #         message = encode_defunct(primitive=challenge_bytes)
+    #
+    #         # 签名消息
+    #         signed_message = account.sign_message(message)
+    #
+    #         signature = signed_message.signature
+    #         print(f"签名长度: {len(signature)} 字节")
+    #         print(f"签名内容: {signature.hex()}")
+    #         # 返回包含r、s、v的完整签名（65字节）
+    #         return signed_message.signature.hex()
+    #     except Exception as e:
+    #         print(f"签名失败: {str(e)}")
+    #         traceback.print_exc()
+    #         return ""
     def sign_challenge(self, private_key_hex: str, challenge: str) -> str:
         """使用私钥签名挑战"""
         try:
@@ -377,6 +406,58 @@ class IdentityChainClient:
         except Exception as e:
             print(f"签名失败: {str(e)}")
             return ""
+
+    def generate_auth_challenge(self, did_bytes32: str, network_id_bytes32: str) -> Dict:
+        """生成认证挑战，防止重放攻击"""
+        try:
+            # 构建交易
+            tx = self.contract.functions.generateAuthChallenge(
+                self.w3.to_bytes(hexstr=did_bytes32),
+                self.w3.to_bytes(hexstr=network_id_bytes32)
+            ).build_transaction({
+                'from': self.account.address,
+                'nonce': self.w3.eth.get_transaction_count(self.account.address),
+                'gas': 300000,
+                'gasPrice': self.w3.eth.gas_price
+            })
+
+            # 签名交易
+            signed_tx = self.w3.eth.account.sign_transaction(tx, self.account.key)
+
+            # 发送交易
+            if hasattr(signed_tx, 'rawTransaction'):
+                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+            elif hasattr(signed_tx, 'raw_transaction'):
+                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+            else:
+                try:
+                    tx_hash = self.w3.eth.send_raw_transaction(signed_tx['rawTransaction'])
+                except:
+                    tx_hash = self.w3.eth.send_raw_transaction(signed_tx)
+
+            # 等待交易确认
+            tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
+
+            # 从事件日志中获取挑战值
+            challenge = None
+            if tx_receipt.status == 1:
+                logs = self.contract.events.AuthChallengeGenerated().process_receipt(tx_receipt)
+                if logs:
+                    challenge = self.w3.to_hex(logs[0]['args']['challenge'])
+                    expires_at = logs[0]['args']['expiresAt']
+
+            return {
+                'success': tx_receipt.status == 1,
+                'tx_hash': self.w3.to_hex(tx_hash),
+                'challenge': challenge,
+                'expires_at': expires_at if 'expires_at' in locals() else None
+            }
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e),
+                'traceback': traceback.format_exc()
+            }
 
     def authenticate(self, did_bytes32: str, network_id_bytes32: str, challenge: str, signature: str) -> Dict:
         """验证设备并获取访问令牌"""
@@ -404,18 +485,27 @@ class IdentityChainClient:
             print(f"- did_bytes32: {type(did_bytes32_bytes)}, 长度: {len(did_bytes32_bytes)}")
             print(f"- network_id_bytes32: {type(network_id_bytes32_bytes)}, 长度: {len(network_id_bytes32_bytes)}")
             print(f"- challenge_bytes32: {type(challenge_bytes32)}, 长度: {len(challenge_bytes32)}")
-            print(f"- signature_bytes: {type(signature_bytes)}, 长度: {len(signature_bytes)}")
+            print(f"- signature_bytes: {type(signature_bytes.hex())}, 长度: {len(signature_bytes)}")
 
-            # 构建交易
-            tx = self.contract.functions.authenticate(
+            gas_estimate = self.contract.functions.authenticate(
                 did_bytes32_bytes,  # 确保是32字节长度
                 network_id_bytes32_bytes,  # 确保是32字节长度
                 challenge_bytes32,  # 确保是32字节长度
-                signature_bytes  # 签名不需要严格长度
+                signature_bytes
+            ).estimate_gas({'from': self.account.address})
+
+            print(f"估计需要的gas: {gas_estimate}")
+            gas_with_buffer = int(gas_estimate * 1.5)
+            # 构建交易
+            tx = self.contract.functions.authenticate(
+                did_bytes32_bytes,
+                network_id_bytes32_bytes,
+                challenge_bytes32,
+                signature_bytes
             ).build_transaction({
                 'from': self.account.address,
                 'nonce': self.w3.eth.get_transaction_count(self.account.address),
-                'gas': 500000,
+                'gas': gas_with_buffer,
                 'gasPrice': self.w3.eth.gas_price
             })
 

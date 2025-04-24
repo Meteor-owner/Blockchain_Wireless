@@ -55,6 +55,7 @@ contract IdentityManager {
     mapping(bytes32 => AccessToken) private accessTokens;  // 令牌ID => 访问令牌
     mapping(bytes32 => AuthLog[]) private authLogs;        // DID => 认证日志
     mapping(address => bool) private registeredUsers;      // 记录已注册用户
+    mapping(bytes => address) private publicKeyAddressCache; //缓存转换后的地址
 
     // 事件
     event DeviceRegistered(bytes32 indexed did, address indexed owner, bytes32 deviceType, string name, address authorizedBy);
@@ -67,10 +68,17 @@ contract IdentityManager {
     event TokenRevoked(bytes32 indexed tokenId);
     event RegistrationChallenge(bytes32 indexed did, bytes32 challenge, uint256 expiresAt);
     event RegistrationVerified(bytes32 indexed did);
+    event AuthChallengeGenerated(bytes32 indexed did, bytes32 indexed networkId, bytes32 challenge, uint256 expiresAt);
 
     // 存储注册挑战
     mapping(bytes32 => bytes32) private registrationChallenges;
     mapping(bytes32 => uint256) private challengeExpiry;
+    // 存储已使用的挑战值，防止重放攻击
+    mapping(bytes32 => bool) private usedChallenges;
+    // 设置挑战值的过期时间
+    uint256 private constant CHALLENGE_EXPIRY = 15 minutes;
+    // 存储挑战值的创建时间
+    mapping(bytes32 => uint256) private challengeTimestamps;
 
     // 注册验证超时时间（默认10分钟）
     uint256 private constant CHALLENGE_TIMEOUT = 10 minutes;
@@ -221,6 +229,28 @@ contract IdentityManager {
     }
 
     /**
+     * @dev 内部函数：生成通用挑战值
+     * @param context 挑战值上下文（如"auth"、"registration"、"keyUpdate"等）
+     * @param data1 上下文相关数据1（如设备DID）
+     * @param data2 上下文相关数据2（如网络ID）
+     * @return 生成的挑战值
+     */
+    function _generateChallenge(
+        string memory context,
+        bytes32 data1,
+        bytes32 data2
+    ) internal view returns (bytes32) {
+        return keccak256(abi.encodePacked(
+            context,
+            data1,
+            data2,
+            block.timestamp,
+            blockhash(block.number - 1),
+            msg.sender
+        ));
+    }
+
+    /**
      * @dev 设备注册内部实现
      */
     function _registerDeviceInternal(
@@ -251,7 +281,7 @@ contract IdentityManager {
         registeredUsers[msg.sender] = true;
 
         // 为新注册的设备生成注册挑战，用于验证设备确实拥有私钥
-        bytes32 challenge = keccak256(abi.encodePacked(did, block.timestamp, blockhash(block.number - 1)));
+        bytes32 challenge = _generateChallenge("registration", did, bytes32(0));
         registrationChallenges[did] = challenge;
         challengeExpiry[did] = block.timestamp + CHALLENGE_TIMEOUT;
 
@@ -305,8 +335,8 @@ contract IdentityManager {
      */
     function issueInitialToken(bytes32 did) internal returns (bytes32) {
         // 生成令牌ID
-        bytes32 tokenId = keccak256(abi.encodePacked("initial", did, block.timestamp));
-        uint256 expiresAt = block.timestamp + 2 days; // 24小时有效期
+        bytes32 tokenId = keccak256(abi.encodePacked("initial", did, msg.sender, block.timestamp));
+        uint256 expiresAt = block.timestamp + 1 days; // 24小时有效期
 
         // 创建令牌
         accessTokens[tokenId] = AccessToken({
@@ -426,39 +456,33 @@ contract IdentityManager {
         require(device.owner != address(0), "Device not found");
         require(device.isActive, "Device is not active");
 
-        // 验证签名长度
-        require(signature.length == 65, "Invalid signature length");
+        // 优化签名长度检查
+        if (signature.length != 65) return false;
 
-        // 构建要验证的消息哈希
-        // 注意：这里需要使用相同的方式构建消息哈希，就像设备签名时一样
+        // 构建要验证的消息哈希 - 使用更高效的方法
+//        bytes32 messageHash = keccak256(abi.encodePacked(did, challenge));
+//        bytes32 ethSignedMessageHash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", messageHash));
         bytes32 messageHash = keccak256(abi.encodePacked(did, challenge));
         bytes32 ethSignedMessageHash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", messageHash));
-
-        // 从签名中提取r, s, v组件
+        // 高效从calldata提取签名组件
+        uint8 v;
         bytes32 r;
         bytes32 s;
-        uint8 v;
-
-        bytes memory signatureInMemory = signature;
 
         assembly {
-        // 从内存中获取r、s、v
-            r := mload(add(signatureInMemory, 32))
-            s := mload(add(signatureInMemory, 64))
-            v := byte(0, mload(add(signatureInMemory, 96)))
+        // 从calldata直接读取，避免内存复制
+            r := calldataload(signature.offset)
+            s := calldataload(add(signature.offset, 32))
+            v := byte(0, calldataload(add(signature.offset, 64)))
         }
 
-        // 如果使用了较新的签名标准，调整v值
-        if (v < 27) {
-            v += 27;
-        }
+        // 调整v值
+        if (v < 27) v += 27;
 
-        // 使用ecrecover恢复签名者的公钥
+        // 使用ecrecover
         address recoveredAddress = ecrecover(ethSignedMessageHash, v, r, s);
 
-        // 将恢复的地址与设备的公钥进行比较
-        // 这里假设publicKey中存储的是以太坊地址格式的公钥
-        // 如果您使用的是原始ECDSA公钥，则需要先将其转换为地址
+        // 计算设备公钥对应的地址
         address deviceAddress = publicKeyToAddress(device.publicKey);
 
         return recoveredAddress != address(0) && recoveredAddress == deviceAddress;
@@ -470,30 +494,62 @@ contract IdentityManager {
      * @return 对应的以太坊地址
      */
     function publicKeyToAddress(bytes memory publicKey) internal pure returns (address) {
-        // 确保公钥长度正确（去除前缀字节）
-        require(publicKey.length >= 64, "Invalid public key length");
+        // 避免额外的内存分配和循环
+        bytes32 hash;
 
-        // 如果公钥包含0x04前缀（非压缩格式），则移除它
-        bytes memory pubKeyNoPrefix;
-        if (publicKey.length > 64 && publicKey[0] == 0x04) {
-            pubKeyNoPrefix = new bytes(64);
-            for (uint i = 0; i < 64; i++) {
-                pubKeyNoPrefix[i] = publicKey[i + 1];
-            }
-        } else {
-            pubKeyNoPrefix = publicKey;
-        }
-
-        // 计算公钥的keccak256哈希，取最后20字节作为地址
-        bytes32 hash = keccak256(pubKeyNoPrefix);
-        address addr;
-
+        // 直接处理公钥，跳过复制操作
         assembly {
-        // 取哈希的最后20字节（160位）
-            addr := mload(add(hash, 12))
+        // 如果公钥以0x04开头（非压缩格式），则跳过第一个字节
+            let offset := 0
+            if eq(byte(0, mload(add(publicKey, 32))), 0x04) {
+                offset := 1
+            }
+
+        // 计算keccak256哈希，避免创建新的内存
+            hash := keccak256(add(add(publicKey, 32), offset), sub(mload(publicKey), offset))
         }
+
+        // 从哈希中提取地址（末尾20字节）
+        return address(uint160(uint256(hash)));
+    }
+
+    function getPublicKeyAddress(bytes memory publicKey) internal returns (address) {
+        // 如果缓存中存在，直接返回
+        if (publicKeyAddressCache[publicKey] != address(0)) {
+            return publicKeyAddressCache[publicKey];
+        }
+
+        // 计算地址
+        address addr = publicKeyToAddress(publicKey);
+
+        // 缓存结果
+        publicKeyAddressCache[publicKey] = addr;
 
         return addr;
+    }
+
+    /**
+     * @dev 生成认证挑战
+     * @param did 设备的分布式标识符
+     * @param networkId 网络标识符
+     * @return 生成的挑战值
+     */
+    function generateAuthChallenge(bytes32 did, bytes32 networkId) external returns (bytes32) {
+        // 简化验证
+        if (!devices[did].isActive || !networks[networkId].isActive) {
+            revert("Device or network inactive");
+        }
+
+        // 使用更高效的方式生成挑战
+        bytes32 challenge = keccak256(abi.encodePacked(did, networkId, block.timestamp, blockhash(block.number - 1)));
+
+        // 记录挑战
+        challengeTimestamps[challenge] = block.timestamp;
+
+        // 触发事件
+        emit AuthChallengeGenerated(did, networkId, challenge, block.timestamp + CHALLENGE_EXPIRY);
+
+        return challenge;
     }
 
     /**
@@ -506,45 +562,100 @@ contract IdentityManager {
      */
     function authenticate(bytes32 did, bytes32 networkId, bytes32 challenge, bytes calldata signature) external returns (bytes32) {
         require(networks[networkId].owner == msg.sender, "Not network owner or authorized AP");
-        require(devices[did].isActive, "Device is not active");
-        require(networks[networkId].isActive, "Network is not active");
 
-        bool hasAccess = deviceNetworkAccess[did][networkId];
-        bool validSignature = false;
-
-        if (hasAccess) {
-            validSignature = verifySignature(did, challenge, signature);
+        // 只检查必要的条件
+        if (!devices[did].isActive || !networks[networkId].isActive) {
+            revert("Device or network inactive");
         }
 
-        // 记录认证尝试
+        // 防重放攻击检查 - 优化顺序，首先检查最可能快速失败的条件
+        if (usedChallenges[challenge]) revert("Challenge already used");
+        if (challengeTimestamps[challenge] == 0) revert("Unknown challenge");
+        if (block.timestamp - challengeTimestamps[challenge] > CHALLENGE_EXPIRY) revert("Challenge expired");
+
+        // 立即标记挑战为已使用，无论认证是否成功
+        usedChallenges[challenge] = true;
+
+        // 检查访问权限
+        bool hasAccess = deviceNetworkAccess[did][networkId];
+        if (!hasAccess) {
+            // 记录失败并立即返回
+            _recordAuthenticationAttempt(did, networkId, challenge, false);
+            revert("No access rights");
+        }
+
+        // 验证签名
+        bool validSignature = verifySignature(did, challenge, signature);
+        if (!validSignature) {
+            // 记录失败并立即返回
+            _recordAuthenticationAttempt(did, networkId, challenge, false);
+            revert("Invalid signature");
+        }
+
+        // 认证成功 - 记录并发放令牌
+        _recordAuthenticationAttempt(did, networkId, challenge, true);
+
+        // 发放访问令牌
+        bytes32 tokenId = _issueToken(did);
+
+        return tokenId;
+    }
+
+    /**
+     * @dev 记录认证尝试
+     * @param did 设备的分布式标识符
+     * @param networkId 网络标识符
+     * @param challenge 挑战值
+     */
+    function _recordAuthenticationAttempt(bytes32 did, bytes32 networkId, bytes32 challenge, bool success) internal {
         authLogs[did].push(AuthLog({
             did: did,
             verifier: msg.sender,
             challengeHash: challenge,
             timestamp: block.timestamp,
-            success: validSignature && hasAccess
+            success: success
         }));
 
-        emit AuthenticationAttempt(did, networkId, validSignature && hasAccess);
+        emit AuthenticationAttempt(did, networkId, success);
+    }
 
-        if (validSignature && hasAccess) {
-            // 发放访问令牌
-            bytes32 tokenId = keccak256(abi.encodePacked(did, block.timestamp, blockhash(block.number - 1)));
-            uint256 expiresAt = block.timestamp + 2 days;
+    /**
+     * @dev 发放令牌
+     * @param did 设备的分布式标识符
+     * @return tokenId
+     */
+    function _issueToken(bytes32 did) internal returns (bytes32) {
+        bytes32 tokenId = keccak256(abi.encodePacked(did, block.timestamp, blockhash(block.number - 1)));
+        uint256 expiresAt = block.timestamp + 1 days;
 
-            accessTokens[tokenId] = AccessToken({
-                did: did,
-                tokenId: tokenId,
-                issuedAt: block.timestamp,
-                expiresAt: expiresAt,
-                isRevoked: false
-            });
+        accessTokens[tokenId] = AccessToken({
+            did: did,
+            tokenId: tokenId,
+            issuedAt: block.timestamp,
+            expiresAt: expiresAt,
+            isRevoked: false
+        });
 
-            emit TokenIssued(did, tokenId, expiresAt);
+        emit TokenIssued(did, tokenId, expiresAt);
 
-            return tokenId;
-        } else {
-            revert("Authentication failed");
+        return tokenId;
+    }
+
+    /**
+     * @dev 定期清理过期的挑战记录，减少存储空间使用（可由管理员调用）
+     * @param challenges 要清理的挑战值数组
+     */
+    function cleanupExpiredChallenges(bytes32[] calldata challenges, uint256 batchSize) external {
+        require(msg.sender == systemAdmin, "Only admin can cleanup");
+
+        uint256 count = challenges.length < batchSize ? challenges.length : batchSize;
+
+        for (uint i = 0; i < count; i++) {
+            bytes32 challenge = challenges[i];
+            if (block.timestamp - challengeTimestamps[challenge] > CHALLENGE_EXPIRY) {
+                delete challengeTimestamps[challenge];
+                delete usedChallenges[challenge];
+            }
         }
     }
 

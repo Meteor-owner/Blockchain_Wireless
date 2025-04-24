@@ -161,37 +161,45 @@ def run_demo():
             print_error(f"授权失败: {device['name']}")
             print_info(f"错误: {result.get('error', '未知错误')}")
 
-    # 步骤4: 模拟设备认证流程
+    # 步骤4: 模拟设备认证流程的更新版本
     print_section("步骤4: 模拟设备认证流程")
     for device in devices:
         print(f"\n🔑 正在认证设备: {device['name']}")
 
-        # 生成挑战
-        challenge = f"auth_challenge_{uuid.uuid4()}"
-        print_info(f"生成挑战: {challenge}")
+        # 生成挑战 - 使用新的生成挑战函数
+        challenge_result = client.generate_auth_challenge(device['did_bytes32'], network_id_bytes32)
 
-        # 设备签名挑战
-        signature = client.sign_challenge(device['keys']['private_key'], challenge)
-        print_info(f"设备签名挑战: {signature[:20]}...")
+        if challenge_result['success']:
+            challenge = challenge_result['challenge']
+            print_info(f"生成挑战: {challenge}")
+            print_info(
+                f"挑战过期时间: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(challenge_result['expires_at']))}")
 
-        # 验证设备并获取令牌
-        auth_result = client.authenticate(device['did_bytes32'], network_id_bytes32, challenge, signature)
+            # 设备签名挑战
+            signature = client.sign_challenge(device['keys']['private_key'], challenge)
+            print_info(f"设备签名挑战: {signature[:20]}...")
 
-        if auth_result['success']:
-            token_id = auth_result['token_id']
-            print_success(f"认证成功! 获得访问令牌")
-            print_info(f"令牌ID: {token_id}")
+            # 验证设备并获取令牌
+            auth_result = client.authenticate(device['did_bytes32'], network_id_bytes32, challenge, signature)
 
-            # 验证令牌有效性
-            token_valid = client.validate_token(token_id)
-            print_info(f"令牌有效性检查: {'有效' if token_valid['valid'] else '无效'}")
+            if auth_result['success']:
+                token_id = auth_result['token_id']
+                print_success(f"认证成功! 获得访问令牌")
+                print_info(f"令牌ID: {token_id}")
 
-            # 记录令牌以便稍后撤销
-            device['token_id'] = token_id
+                # 验证令牌有效性
+                token_valid = client.validate_token(token_id)
+                print_info(f"令牌有效性检查: {'有效' if token_valid['valid'] else '无效'}")
+
+                # 记录令牌以便稍后撤销
+                device['token_id'] = token_id
+            else:
+                print_error(f"认证失败")
+                print_info(f"错误: {auth_result.get('error', '未知错误')}")
         else:
-            print_error(f"认证失败")
-            print_info(f"错误: {auth_result.get('error', '未知错误')}")
-
+            print_error(f"生成挑战失败")
+            print_info(f"错误: {challenge_result.get('error', '未知错误')}")
+def demo2():
     # 步骤5: 更新设备信息
     print_section("步骤5: 更新设备信息")
     if len(devices) > 0:
@@ -240,27 +248,62 @@ def run_demo():
         else:
             print_error(f"获取设备原始信息失败")
 
-    # 步骤6: 模拟一个恶意认证尝试
+    # 步骤6: 模拟一个恶意认证尝试的更新版本
     print_section("步骤6: 模拟恶意认证尝试")
     if len(devices) > 0:
         device = devices[0]
         print_info(f"尝试使用设备 {device['name']} 进行认证")
 
-        # 生成挑战
-        challenge = f"auth_challenge_{uuid.uuid4()}"
-        print_info(f"生成挑战: {challenge}")
+        # 首先获取一个合法的挑战值
+        challenge_result = client.generate_auth_challenge(device['did_bytes32'], network_id_bytes32)
 
-        # 伪造错误的签名
-        fake_signature = "deadbeef" * 16  # 伪造的签名
-        print_info(f"使用伪造的签名: {fake_signature[:20]}...")
+        if challenge_result['success']:
+            challenge = challenge_result['challenge']
+            print_info(f"生成挑战: {challenge}")
 
-        # 尝试验证
-        try:
-            auth_result = client.authenticate(device['did_bytes32'], network_id_bytes32, challenge, fake_signature)
-            print_error(f"伪造签名居然通过了认证? 这不应该发生!")
-        except Exception as e:
-            print_success(f"预期的错误: 伪造签名被拒绝")
-            print_info(f"错误信息: {str(e)}")
+            # 伪造错误的签名
+            fake_signature = "deadbeef" * 16  # 伪造的签名
+            print_info(f"使用伪造的签名: {fake_signature[:20]}...")
+
+            # 尝试验证
+            try:
+                auth_result = client.authenticate(device['did_bytes32'], network_id_bytes32, challenge, fake_signature)
+                print_error(f"伪造签名居然通过了认证? 这不应该发生!")
+            except Exception as e:
+                print_success(f"预期的错误: 伪造签名被拒绝")
+                print_info(f"错误信息: {str(e)}")
+
+            # 尝试重放攻击 - 使用相同的挑战值和合法签名
+            print_info("\n尝试重放攻击 - 使用相同的挑战值...")
+
+            # 先用合法签名获取正确签名
+            valid_signature = client.sign_challenge(device['keys']['private_key'], challenge)
+
+            # 首次认证
+            try:
+                auth_result1 = client.authenticate(device['did_bytes32'], network_id_bytes32, challenge,
+                                                   valid_signature)
+
+                if auth_result1['success']:
+                    print_success("首次认证成功 (预期行为)")
+
+                    # 尝试重放相同的挑战和签名
+                    try:
+                        auth_result2 = client.authenticate(device['did_bytes32'], network_id_bytes32, challenge,
+                                                           valid_signature)
+                        print_error("重放攻击成功! 这不应该发生")
+                    except Exception as e:
+                        print_success("重放攻击被阻止 (预期行为)")
+                        print_info(f"错误信息: {str(e)}")
+                else:
+                    print_error(f"首次认证失败，无法测试重放攻击")
+                    print_info(f"错误: {auth_result1.get('error', '未知错误')}")
+            except Exception as e:
+                print_error(f"首次认证抛出异常，无法测试重放攻击")
+                print_info(f"错误信息: {str(e)}")
+        else:
+            print_error(f"生成挑战失败")
+            print_info(f"错误: {challenge_result.get('error', '未知错误')}")
 
     # 步骤7: 查看认证日志
     print_section("步骤7: 查看设备认证日志")
