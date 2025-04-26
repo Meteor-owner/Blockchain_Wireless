@@ -634,6 +634,189 @@ class IdentityChainClient:
                 'error': str(e)
             }
 
+    def update_device_info(self, did_bytes32: str, name: str, metadata: str) -> Dict:
+        """更新设备信息
+
+        Args:
+            did_bytes32: 设备的分布式标识符 (bytes32格式)
+            name: 新的设备名称
+            metadata: 新的设备元数据
+
+        Returns:
+            Dict: 包含操作结果的字典
+        """
+        try:
+            # 转换metadata为bytes32
+            if isinstance(metadata, str):
+                if metadata.startswith('0x'):
+                    metadata_bytes32 = self.w3.to_bytes(hexstr=metadata)
+                else:
+                    metadata_bytes32 = self.w3.to_bytes(text=metadata).ljust(32, b'\0')
+            else:
+                metadata_bytes32 = metadata
+
+            # 构建交易
+            tx = self.contract.functions.updateDeviceInfo(
+                self.w3.to_bytes(hexstr=did_bytes32),
+                name,
+                metadata_bytes32
+            ).build_transaction({
+                'from': self.account.address,
+                'nonce': self.w3.eth.get_transaction_count(self.account.address),
+                'gas': 300000,
+                'gasPrice': self.w3.eth.gas_price
+            })
+
+            # 签名交易
+            signed_tx = self.w3.eth.account.sign_transaction(tx, self.account.key)
+
+            # 发送交易 - 处理不同版本的Web3.py
+            tx_hash = None
+            if hasattr(signed_tx, 'rawTransaction'):
+                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+            elif hasattr(signed_tx, 'raw_transaction'):
+                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+            else:
+                # 尝试直接获取
+                try:
+                    tx_hash = self.w3.eth.send_raw_transaction(signed_tx['rawTransaction'])
+                except:
+                    tx_hash = self.w3.eth.send_raw_transaction(signed_tx)
+
+            # 等待交易确认
+            tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
+
+            return {
+                'success': tx_receipt.status == 1,
+                'tx_hash': self.w3.to_hex(tx_hash),
+                'block_number': tx_receipt.blockNumber,
+                'new_name': name,
+                'new_metadata': metadata
+            }
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e),
+                'traceback': traceback.format_exc()
+            }
+
+    def deactivate_device(self, did_bytes32: str) -> Dict:
+        """停用设备
+
+        Args:
+            did_bytes32: 设备的分布式标识符 (bytes32格式)
+
+        Returns:
+            Dict: 包含操作结果的字典
+        """
+        try:
+            # 构建交易
+            tx = self.contract.functions.deactivateDevice(
+                self.w3.to_bytes(hexstr=did_bytes32)
+            ).build_transaction({
+                'from': self.account.address,
+                'nonce': self.w3.eth.get_transaction_count(self.account.address),
+                'gas': 300000,
+                'gasPrice': self.w3.eth.gas_price
+            })
+
+            # 签名交易
+            signed_tx = self.w3.eth.account.sign_transaction(tx, self.account.key)
+
+            # 发送交易 - 处理不同版本的Web3.py
+            tx_hash = None
+            if hasattr(signed_tx, 'rawTransaction'):
+                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+            elif hasattr(signed_tx, 'raw_transaction'):
+                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+            else:
+                # 尝试直接获取
+                try:
+                    tx_hash = self.w3.eth.send_raw_transaction(signed_tx['rawTransaction'])
+                except:
+                    tx_hash = self.w3.eth.send_raw_transaction(signed_tx)
+
+            # 等待交易确认
+            tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
+
+            return {
+                'success': tx_receipt.status == 1,
+                'tx_hash': self.w3.to_hex(tx_hash),
+                'block_number': tx_receipt.blockNumber
+            }
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e),
+                'traceback': traceback.format_exc()
+            }
+
+    def get_owner_devices(self, owner_address=None) -> Dict:
+        """获取用户拥有的设备列表
+
+        Args:
+            owner_address: 所有者地址，默认为当前账户
+
+        Returns:
+            Dict: 包含设备列表的字典
+        """
+        try:
+            if owner_address is None:
+                owner_address = self.account.address
+
+            # 调用合约方法
+            devices = self.contract.functions.getOwnerDevices(
+                owner_address
+            ).call({'from': self.account.address})
+
+            # 转换为可读格式
+            device_list = [self.w3.to_hex(did) for did in devices]
+
+            return {
+                'success': True,
+                'device_count': len(device_list),
+                'devices': device_list
+            }
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e),
+                'traceback': traceback.format_exc()
+            }
+
+    def get_owner_networks(self, owner_address=None) -> Dict:
+        """获取用户拥有的网络列表
+
+        Args:
+            owner_address: 所有者地址，默认为当前账户
+
+        Returns:
+            Dict: 包含网络列表的字典
+        """
+        try:
+            if owner_address is None:
+                owner_address = self.account.address
+
+            # 调用合约方法
+            networks = self.contract.functions.getOwnerNetworks(
+                owner_address
+            ).call({'from': self.account.address})
+
+            # 转换为可读格式
+            network_list = [self.w3.to_hex(nid) for nid in networks]
+
+            return {
+                'success': True,
+                'network_count': len(network_list),
+                'networks': network_list
+            }
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e),
+                'traceback': traceback.format_exc()
+            }
+
     def check_access(self, did_bytes32: str, network_id_bytes32: str) -> Dict:
         """检查设备是否有权访问网络"""
         try:

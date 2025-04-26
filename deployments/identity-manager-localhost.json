@@ -2,12 +2,12 @@
   "network": "localhost",
   "contract": {
     "name": "IdentityManager",
-    "address": "0x36b58F5C1969B7b6591D752ea6F5486D069010AB",
+    "address": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
     "deployer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
-    "deploymentTime": "2025-04-24T03:31:32.663Z",
+    "deploymentTime": "2025-04-25T01:59:21.751Z",
     "systemAdmin": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
   },
   "networkInfo": {
-    "gasPrice": "1000043505"
+    "gasPrice": "1786149555"
   }
 }
