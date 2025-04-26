@@ -868,3 +868,366 @@ class IdentityChainClient:
                 'success': False,
                 'error': str(e)
             }
+
+    # 添加以下方法到python/test_identity.py中的IdentityChainClient类
+
+    def register_user(self, name: str, email: str) -> Dict:
+        """注册新用户
+
+        Args:
+            name: 用户名称
+            email: 用户邮箱（可选）
+
+        Returns:
+            Dict: 包含操作结果的字典
+        """
+        try:
+            # 构建交易
+            tx = self.contract.functions.registerUser(
+                name,
+                email
+            ).build_transaction({
+                'from': self.account.address,
+                'nonce': self.w3.eth.get_transaction_count(self.account.address),
+                'gas': 300000,
+                'gasPrice': self.w3.eth.gas_price
+            })
+
+            # 签名交易
+            signed_tx = self.w3.eth.account.sign_transaction(tx, self.account.key)
+
+            # 发送交易
+            tx_hash = None
+            if hasattr(signed_tx, 'rawTransaction'):
+                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+            elif hasattr(signed_tx, 'raw_transaction'):
+                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+            else:
+                # 尝试直接获取
+                try:
+                    tx_hash = self.w3.eth.send_raw_transaction(signed_tx['rawTransaction'])
+                except:
+                    tx_hash = self.w3.eth.send_raw_transaction(signed_tx)
+
+            # 等待交易确认
+            tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
+
+            return {
+                'success': tx_receipt.status == 1,
+                'tx_hash': self.w3.to_hex(tx_hash),
+                'block_number': tx_receipt.blockNumber
+            }
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e),
+                'traceback': traceback.format_exc()
+            }
+
+    def update_user_info(self, name: str, email: str) -> Dict:
+        """更新用户信息
+
+        Args:
+            name: 新用户名称
+            email: 新用户邮箱
+
+        Returns:
+            Dict: 包含操作结果的字典
+        """
+        try:
+            # 构建交易
+            tx = self.contract.functions.updateUserInfo(
+                name,
+                email
+            ).build_transaction({
+                'from': self.account.address,
+                'nonce': self.w3.eth.get_transaction_count(self.account.address),
+                'gas': 300000,
+                'gasPrice': self.w3.eth.gas_price
+            })
+
+            # 签名交易
+            signed_tx = self.w3.eth.account.sign_transaction(tx, self.account.key)
+
+            # 发送交易
+            tx_hash = None
+            if hasattr(signed_tx, 'rawTransaction'):
+                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+            elif hasattr(signed_tx, 'raw_transaction'):
+                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+            else:
+                # 尝试直接获取
+                try:
+                    tx_hash = self.w3.eth.send_raw_transaction(signed_tx['rawTransaction'])
+                except:
+                    tx_hash = self.w3.eth.send_raw_transaction(signed_tx)
+
+            # 等待交易确认
+            tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
+
+            return {
+                'success': tx_receipt.status == 1,
+                'tx_hash': self.w3.to_hex(tx_hash),
+                'block_number': tx_receipt.blockNumber
+            }
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e),
+                'traceback': traceback.format_exc()
+            }
+
+    def deactivate_user(self) -> Dict:
+        """停用用户账户
+
+        Returns:
+            Dict: 包含操作结果的字典
+        """
+        try:
+            # 构建交易
+            tx = self.contract.functions.deactivateUser().build_transaction({
+                'from': self.account.address,
+                'nonce': self.w3.eth.get_transaction_count(self.account.address),
+                'gas': 300000,
+                'gasPrice': self.w3.eth.gas_price
+            })
+
+            # 签名交易
+            signed_tx = self.w3.eth.account.sign_transaction(tx, self.account.key)
+
+            # 发送交易
+            tx_hash = None
+            if hasattr(signed_tx, 'rawTransaction'):
+                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+            elif hasattr(signed_tx, 'raw_transaction'):
+                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+            else:
+                # 尝试直接获取
+                try:
+                    tx_hash = self.w3.eth.send_raw_transaction(signed_tx['rawTransaction'])
+                except:
+                    tx_hash = self.w3.eth.send_raw_transaction(signed_tx)
+
+            # 等待交易确认
+            tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
+
+            return {
+                'success': tx_receipt.status == 1,
+                'tx_hash': self.w3.to_hex(tx_hash),
+                'block_number': tx_receipt.blockNumber
+            }
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e),
+                'traceback': traceback.format_exc()
+            }
+
+    def get_user_info(self, user_address=None) -> Dict:
+        """获取用户信息
+
+        Args:
+            user_address: 用户地址，默认为当前账户
+
+        Returns:
+            Dict: 包含用户信息的字典
+        """
+        try:
+            if user_address is None:
+                user_address = self.account.address
+
+            # 调用合约方法
+            result = self.contract.functions.getUserInfo(
+                user_address
+            ).call({'from': self.account.address})
+
+            return {
+                'success': True,
+                'name': result[0],
+                'email': result[1],
+                'registered_at': result[2],
+                'is_active': result[3],
+                'device_count': result[4],
+                'network_count': result[5],
+                'role': self.w3.to_hex(result[6])
+            }
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e),
+                'traceback': traceback.format_exc()
+            }
+
+    def is_registered_user(self, user_address=None) -> Dict:
+        """检查用户是否已注册
+
+        Args:
+            user_address: 用户地址，默认为当前账户
+
+        Returns:
+            Dict: 包含检查结果的字典
+        """
+        try:
+            if user_address is None:
+                user_address = self.account.address
+
+            # 调用合约方法
+            is_registered = self.contract.functions.isRegisteredUser(
+                user_address
+            ).call({'from': self.account.address})
+
+            return {
+                'success': True,
+                'is_registered': is_registered
+            }
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e),
+                'is_registered': False,
+                'traceback': traceback.format_exc()
+            }
+
+    def get_user_count(self) -> Dict:
+        """获取所有用户数量
+
+        Returns:
+            Dict: 包含用户数量的字典
+        """
+        try:
+            # 调用合约方法
+            count = self.contract.functions.getUserCount().call({'from': self.account.address})
+
+            return {
+                'success': True,
+                'count': count
+            }
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e),
+                'count': 0,
+                'traceback': traceback.format_exc()
+            }
+
+    def get_user_list(self, offset: int, limit: int) -> Dict:
+        """获取分页的用户列表
+
+        Args:
+            offset: 起始索引
+            limit: 数量限制
+
+        Returns:
+            Dict: 包含用户列表的字典
+        """
+        try:
+            # 调用合约方法
+            result = self.contract.functions.getUserList(
+                offset,
+                limit
+            ).call({'from': self.account.address})
+
+            return {
+                'success': True,
+                'addresses': result[0],
+                'names': result[1],
+                'is_actives': result[2]
+            }
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e),
+                'addresses': [],
+                'names': [],
+                'is_actives': [],
+                'traceback': traceback.format_exc()
+            }
+
+    def get_user_devices(self, user_address=None) -> Dict:
+        """获取用户的设备列表
+
+        Args:
+            user_address: 用户地址，默认为当前账户
+
+        Returns:
+            Dict: 包含设备列表的字典
+        """
+        try:
+            if user_address is None:
+                user_address = self.account.address
+
+            # 调用合约方法
+            result = self.contract.functions.getUserDevices(
+                user_address
+            ).call({'from': self.account.address})
+
+            return {
+                'success': True,
+                'device_ids': result[0],
+                'device_names': result[1],
+                'device_types': result[2],
+                'is_actives': result[3]
+            }
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e),
+                'device_ids': [],
+                'device_names': [],
+                'device_types': [],
+                'is_actives': [],
+                'traceback': traceback.format_exc()
+            }
+
+    def assign_device_to_user(self, device_id: str, user_address: str) -> Dict:
+        """将设备分配给特定用户
+
+        Args:
+            device_id: 设备ID
+            user_address: 用户地址
+
+        Returns:
+            Dict: 包含操作结果的字典
+        """
+        try:
+            # 构建交易
+            tx = self.contract.functions.assignDeviceToUser(
+                self.w3.to_bytes(hexstr=device_id),
+                user_address
+            ).build_transaction({
+                'from': self.account.address,
+                'nonce': self.w3.eth.get_transaction_count(self.account.address),
+                'gas': 300000,
+                'gasPrice': self.w3.eth.gas_price
+            })
+
+            # 签名交易
+            signed_tx = self.w3.eth.account.sign_transaction(tx, self.account.key)
+
+            # 发送交易
+            tx_hash = None
+            if hasattr(signed_tx, 'rawTransaction'):
+                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+            elif hasattr(signed_tx, 'raw_transaction'):
+                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+            else:
+                # 尝试直接获取
+                try:
+                    tx_hash = self.w3.eth.send_raw_transaction(signed_tx['rawTransaction'])
+                except:
+                    tx_hash = self.w3.eth.send_raw_transaction(signed_tx)
+
+            # 等待交易确认
+            tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
+
+            return {
+                'success': tx_receipt.status == 1,
+                'tx_hash': self.w3.to_hex(tx_hash),
+                'block_number': tx_receipt.blockNumber
+            }
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e),
+                'traceback': traceback.format_exc()
+            }

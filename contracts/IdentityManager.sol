@@ -6,6 +6,18 @@ pragma solidity ^0.8.20;
  * @dev 管理无线网络中设备身份验证的智能合约
  */
 contract IdentityManager {
+    // 用户信息结构
+    struct User {
+        address userAddress;     // 用户地址
+        string name;             // 用户名称
+        string email;            // 用户邮箱（可选）
+        uint256 registeredAt;    // 注册时间戳
+        bool isActive;           // 用户是否活跃
+        bytes32[] devices;       // 用户拥有的设备DID列表
+        bytes32[] networks;      // 用户创建的网络ID列表
+        bytes32 role;            // 用户角色（普通用户、管理员等）
+    }
+
     // 设备信息结构
     struct Device {
         address owner;         // 设备所有者
@@ -17,6 +29,7 @@ contract IdentityManager {
         string name;           // 设备名称
         bytes32 metadata;      // 设备元数据哈希
         address authorizedBy;  // 授权注册的用户地址
+        address userAddress;   // 设备归属的用户地址
     }
 
     // 认证记录结构
@@ -47,18 +60,29 @@ contract IdentityManager {
     }
 
     // 存储映射
-    mapping(bytes32 => Device) private devices;            // DID => 设备
-    mapping(address => bytes32[]) private ownerDevices;    // 所有者 => DIDs
-    mapping(bytes32 => Network) private networks;          // 网络ID => 网络
-    mapping(address => bytes32[]) private ownerNetworks;   // 所有者 => 网络IDs
+    mapping(address => User) private users;                   // 用户地址 => 用户信息
+    mapping(string => address) private userNames;             // 用户名 => 用户地址 (用于检查名称唯一性)
+    mapping(bytes32 => Device) private devices;               // DID => 设备
+    mapping(address => bytes32[]) private ownerDevices;       // 所有者 => DIDs
+    mapping(bytes32 => Network) private networks;             // 网络ID => 网络
+    mapping(address => bytes32[]) private ownerNetworks;      // 所有者 => 网络IDs
     mapping(bytes32 => mapping(bytes32 => bool)) private deviceNetworkAccess; // DID => 网络ID => 有无访问权限
-    mapping(bytes32 => AccessToken) private accessTokens;  // 令牌ID => 访问令牌
-    mapping(bytes32 => AuthLog[]) private authLogs;        // DID => 认证日志
-    mapping(address => bool) private registeredUsers;      // 记录已注册用户
-    mapping(bytes => address) private publicKeyAddressCache; //缓存转换后的地址
+    mapping(bytes32 => AccessToken) private accessTokens;     // 令牌ID => 访问令牌
+    mapping(bytes32 => AuthLog[]) private authLogs;           // DID => 认证日志
+    mapping(address => bool) private registeredUsers;         // 记录已注册用户
+    mapping(bytes => address) private publicKeyAddressCache;  //缓存转换后的地址
+    address[] private allUsers;                               // 所有用户地址数组
+
+    // 用户角色常量
+    bytes32 public constant ROLE_USER = keccak256("ROLE_USER");
+    bytes32 public constant ROLE_ADMIN = keccak256("ROLE_ADMIN");
 
     // 事件
+    event UserRegistered(address indexed userAddress, string name, bytes32 role);
+    event UserUpdated(address indexed userAddress, string name);
+    event UserDeactivated(address indexed userAddress);
     event DeviceRegistered(bytes32 indexed did, address indexed owner, bytes32 deviceType, string name, address authorizedBy);
+    event DeviceAssignedToUser(bytes32 indexed did, address indexed userAddress);
     event DeviceDeactivated(bytes32 indexed did);
     event NetworkCreated(bytes32 indexed networkId, address indexed owner, string name);
     event AccessGranted(bytes32 indexed did, bytes32 indexed networkId);
@@ -109,6 +133,9 @@ contract IdentityManager {
 
         ownerNetworks[msg.sender].push(defaultNetworkId);
         emit NetworkCreated(defaultNetworkId, msg.sender, defaultNetworkName);
+
+        // 注册系统管理员为第一个用户
+        _registerUser(msg.sender, "System Admin", "", ROLE_ADMIN);
     }
 
     /**
@@ -175,7 +202,194 @@ contract IdentityManager {
     }
 
     /**
-     * @dev 注册新设备（新用户注册，需要老用户签名）
+     * @dev 注册新用户
+     * @param name 用户名称
+     * @param email 用户邮箱（可选）
+     */
+    function registerUser(string calldata name, string calldata email) external returns (bool success, string memory message) {
+        // 检查用户名是否已存在
+        if (userNames[name] != address(0)) {
+            return (false, "Username already taken");
+        }
+
+        // 检查用户是否已注册
+        if (users[msg.sender].userAddress != address(0)) {
+            return (false, "User already registered");
+        }
+
+        // 注册用户
+        success = _registerUser(msg.sender, name, email, ROLE_USER);
+
+        if (success) {
+            return (true, "User registered successfully");
+        } else {
+            return (false, "Failed to register user");
+        }
+    }
+
+    /**
+     * @dev 更新用户信息
+     * @param name 新用户名称
+     * @param email 新用户邮箱
+     */
+    function updateUserInfo(string calldata name, string calldata email) external returns (bool success, string memory message) {
+        // 检查用户是否已注册
+        if (users[msg.sender].userAddress == address(0)) {
+            return (false, "User not registered");
+        }
+
+        // 如果用户名有变更，检查新用户名是否已存在
+        if (keccak256(abi.encodePacked(users[msg.sender].name)) != keccak256(abi.encodePacked(name))) {
+            if (userNames[name] != address(0)) {
+                return (false, "Username already taken");
+            }
+            // 删除旧用户名映射
+            delete userNames[users[msg.sender].name];
+            // 添加新用户名映射
+            userNames[name] = msg.sender;
+        }
+
+        // 更新用户信息
+        users[msg.sender].name = name;
+        users[msg.sender].email = email;
+
+        emit UserUpdated(msg.sender, name);
+
+        return (true, "User information updated successfully");
+    }
+
+    /**
+     * @dev 停用用户账户
+     */
+    function deactivateUser() external returns (bool success, string memory message) {
+        // 检查用户是否已注册
+        if (users[msg.sender].userAddress == address(0)) {
+            return (false, "User not registered");
+        }
+
+        // 停用用户账户
+        users[msg.sender].isActive = false;
+
+        emit UserDeactivated(msg.sender);
+
+        return (true, "User deactivated successfully");
+    }
+
+    /**
+     * @dev 内部函数：注册新用户
+     * @param userAddress 用户地址
+     * @param name 用户名称
+     * @param email 用户邮箱
+     * @param role 用户角色
+     * @return success 注册是否成功
+     */
+    function _registerUser(address userAddress, string memory name, string memory email, bytes32 role) internal returns (bool success) {
+        // 创建用户
+        users[userAddress] = User({
+            userAddress: userAddress,
+            name: name,
+            email: email,
+            registeredAt: block.timestamp,
+            isActive: true,
+            devices: new bytes32[](0),
+            networks: new bytes32[](0),
+            role: role
+        });
+
+        // 添加用户名映射
+        userNames[name] = userAddress;
+
+        // 将用户添加到所有用户数组
+        allUsers.push(userAddress);
+
+        // 标记为已注册用户
+        registeredUsers[userAddress] = true;
+
+        emit UserRegistered(userAddress, name, role);
+
+        return true;
+    }
+
+    /**
+     * @dev 获取用户信息
+     * @param userAddress 用户地址
+     * @return name 用户名称
+     * @return email 用户邮箱
+     * @return registeredAt 注册时间
+     * @return isActive 是否活跃
+     * @return deviceCount 拥有的设备数量
+     * @return networkCount 创建的网络数量
+     * @return role 用户角色
+     */
+    function getUserInfo(address userAddress) external view returns (
+        string memory name,
+        string memory email,
+        uint256 registeredAt,
+        bool isActive,
+        uint256 deviceCount,
+        uint256 networkCount,
+        bytes32 role
+    ) {
+        User storage user = users[userAddress];
+        require(user.userAddress != address(0), "User not found");
+
+        return (
+            user.name,
+            user.email,
+            user.registeredAt,
+            user.isActive,
+            user.devices.length,
+            user.networks.length,
+            user.role
+        );
+    }
+
+    /**
+     * @dev 获取所有用户数量
+     * @return 用户数量
+     */
+    function getUserCount() external view returns (uint256) {
+        return allUsers.length;
+    }
+
+    /**
+     * @dev 获取分页的用户列表
+     * @param offset 起始索引
+     * @param limit 数量限制
+     * @return userAddresses 用户地址数组
+     * @return names 用户名称数组
+     * @return isActives 是否活跃数组
+     */
+    function getUserList(uint256 offset, uint256 limit) external view returns (
+        address[] memory userAddresses,
+        string[] memory names,
+        bool[] memory isActives
+    ) {
+        require(offset < allUsers.length, "Offset out of range");
+
+        uint256 size = limit;
+        if (offset + limit > allUsers.length) {
+            size = allUsers.length - offset;
+        }
+
+        userAddresses = new address[](size);
+        names = new string[](size);
+        isActives = new bool[](size);
+
+        for (uint256 i = 0; i < size; i++) {
+            address userAddress = allUsers[offset + i];
+            User storage user = users[userAddress];
+
+            userAddresses[i] = userAddress;
+            names[i] = user.name;
+            isActives[i] = user.isActive;
+        }
+
+        return (userAddresses, names, isActives);
+    }
+
+    /**
+     * @dev 注册新设备并分配给用户
      * @param deviceType 设备类型
      * @param did 设备的分布式标识符
      * @param publicKey 设备的公钥
@@ -197,6 +411,11 @@ contract IdentityManager {
 
         if (publicKey.length == 0) {
             return (false, "Invalid public key");
+        }
+
+        // 检查用户是否已注册
+        if (users[msg.sender].userAddress == address(0)) {
+            return (false, "User not registered");
         }
 
         address authorizer;
@@ -224,6 +443,14 @@ contract IdentityManager {
         if (!deviceRegistry) {
             return (false, "Device already registered");
         }
+
+        // 将设备添加到用户的设备列表
+        users[msg.sender].devices.push(did);
+
+        // 更新设备的用户地址
+        devices[did].userAddress = msg.sender;
+
+        emit DeviceAssignedToUser(did, msg.sender);
 
         return (true, "Registration successful");
     }
@@ -271,7 +498,8 @@ contract IdentityManager {
             isActive: true,
             name: name,
             metadata: metadata,
-            authorizedBy: authorizedBy
+            authorizedBy: authorizedBy,
+            userAddress: msg.sender  // 默认设置为消息发送者
         });
 
         // 更新索引
@@ -302,6 +530,90 @@ contract IdentityManager {
         }
 
         return (true);
+    }
+
+    /**
+     * @dev 将设备分配给特定用户（仅限设备所有者）
+     * @param did 设备ID
+     * @param userAddress 用户地址
+     */
+    function assignDeviceToUser(bytes32 did, address userAddress) external returns (bool success, string memory message) {
+        Device storage device = devices[did];
+
+        // 检查设备是否存在且调用者是设备所有者
+        if (device.owner != msg.sender) {
+            return (false, "Not device owner");
+        }
+
+        // 检查目标用户是否已注册
+        if (users[userAddress].userAddress == address(0)) {
+            return (false, "Target user not registered");
+        }
+
+        // 检查设备是否已经归属于该用户
+        if (device.userAddress == userAddress) {
+            return (false, "Device already assigned to this user");
+        }
+
+        // 如果设备之前已分配给其他用户，从他们的设备列表中移除
+        if (device.userAddress != address(0)) {
+            bytes32[] storage previousUserDevices = users[device.userAddress].devices;
+
+            for (uint i = 0; i < previousUserDevices.length; i++) {
+                if (previousUserDevices[i] == did) {
+                    // 通过将最后一个元素移动到要删除的位置来移除元素
+                    previousUserDevices[i] = previousUserDevices[previousUserDevices.length - 1];
+                    previousUserDevices.pop();
+                    break;
+                }
+            }
+        }
+
+        // 更新设备的用户地址
+        device.userAddress = userAddress;
+
+        // 将设备添加到新用户的设备列表
+        users[userAddress].devices.push(did);
+
+        emit DeviceAssignedToUser(did, userAddress);
+
+        return (true, "Device assigned to user successfully");
+    }
+
+    /**
+     * @dev 获取用户的设备列表
+     * @param userAddress 用户地址
+     * @return deviceIds 设备ID数组
+     * @return deviceNames 设备名称数组
+     * @return deviceTypes 设备类型数组
+     * @return isActives 设备是否活跃数组
+     */
+    function getUserDevices(address userAddress) external view returns (
+        bytes32[] memory deviceIds,
+        string[] memory deviceNames,
+        bytes32[] memory deviceTypes,
+        bool[] memory isActives
+    ) {
+        User storage user = users[userAddress];
+        require(user.userAddress != address(0), "User not found");
+
+        uint256 deviceCount = user.devices.length;
+        deviceIds = new bytes32[](deviceCount);
+        deviceNames = new string[](deviceCount);
+        deviceTypes = new bytes32[](deviceCount);
+        isActives = new bool[](deviceCount);
+
+        for (uint256 i = 0; i < deviceCount; i++) {
+            bytes32 did = user.devices[i];
+            Device storage device = devices[did];
+
+            deviceIds[i] = did;
+            deviceNames[i] = device.name;
+            deviceTypes[i] = device.deviceType;
+            isActives[i] = device.isActive;
+        }
+
+        return (deviceIds, deviceNames, deviceTypes, isActives);
     }
 
     /**
@@ -370,7 +682,7 @@ contract IdentityManager {
      * @param did 设备的分布式标识符
      */
     function deactivateDevice(bytes32 did) external {
-        require(devices[did].owner == msg.sender, "Not device owner");
+        require(devices[did].owner == msg.sender || devices[did].userAddress == msg.sender, "Not device owner or assigned user");
         require(devices[did].isActive, "Device already inactive");
 
         devices[did].isActive = false;
@@ -386,6 +698,9 @@ contract IdentityManager {
     function createNetwork(bytes32 networkId, string calldata name) external {
         require(networks[networkId].owner == address(0), "Network already exists");
 
+        // 检查用户是否已注册
+        require(users[msg.sender].userAddress != address(0), "User not registered");
+
         networks[networkId] = Network({
             owner: msg.sender,
             networkId: networkId,
@@ -395,6 +710,9 @@ contract IdentityManager {
         });
 
         ownerNetworks[msg.sender].push(networkId);
+
+        // 将网络添加到用户的网络列表
+        users[msg.sender].networks.push(networkId);
 
         emit NetworkCreated(networkId, msg.sender, name);
     }
@@ -459,18 +777,17 @@ contract IdentityManager {
         // 优化签名长度检查
         if (signature.length != 65) return false;
 
-        // 构建要验证的消息哈希 - 使用更高效的方法
-//        bytes32 messageHash = keccak256(abi.encodePacked(did, challenge));
-//        bytes32 ethSignedMessageHash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", messageHash));
+        // 构建要验证的消息哈希
         bytes32 messageHash = keccak256(abi.encodePacked(did, challenge));
         bytes32 ethSignedMessageHash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", messageHash));
+
         // 高效从calldata提取签名组件
         uint8 v;
         bytes32 r;
         bytes32 s;
 
         assembly {
-        // 从calldata直接读取，避免内存复制
+            // 从calldata直接读取，避免内存复制
             r := calldataload(signature.offset)
             s := calldataload(add(signature.offset, 32))
             v := byte(0, calldataload(add(signature.offset, 64)))
@@ -499,13 +816,13 @@ contract IdentityManager {
 
         // 直接处理公钥，跳过复制操作
         assembly {
-        // 如果公钥以0x04开头（非压缩格式），则跳过第一个字节
+            // 如果公钥以0x04开头（非压缩格式），则跳过第一个字节
             let offset := 0
             if eq(byte(0, mload(add(publicKey, 32))), 0x04) {
                 offset := 1
             }
 
-        // 计算keccak256哈希，避免创建新的内存
+            // 计算keccak256哈希，避免创建新的内存
             hash := keccak256(add(add(publicKey, 32), offset), sub(mload(publicKey), offset))
         }
 
@@ -682,8 +999,11 @@ contract IdentityManager {
 
         require(token.tokenId == tokenId, "Token does not exist");
         require(!token.isRevoked, "Token already revoked");
+
+        // 允许设备所有者、设备的用户或网络所有者撤销令牌
         require(devices[did].owner == msg.sender ||
-        networks[tokenId].owner == msg.sender,
+               devices[did].userAddress == msg.sender ||
+               networks[tokenId].owner == msg.sender,
             "Not authorized to revoke");
 
         token.isRevoked = true;
@@ -702,6 +1022,7 @@ contract IdentityManager {
      * @return name 设备名称
      * @return metadata 设备元数据
      * @return authorizedBy 授权注册的用户
+     * @return userAddress 设备归属的用户地址
      */
     function getDeviceInfo(bytes32 did) external view returns (
         bytes32 deviceType,
@@ -711,7 +1032,8 @@ contract IdentityManager {
         bool isActive,
         string memory name,
         bytes32 metadata,
-        address authorizedBy
+        address authorizedBy,
+        address userAddress
     ) {
         Device storage device = devices[did];
         require(device.owner != address(0), "Device not found");
@@ -724,7 +1046,8 @@ contract IdentityManager {
             device.isActive,
             device.name,
             device.metadata,
-            device.authorizedBy
+            device.authorizedBy,
+            device.userAddress
         );
     }
 
@@ -735,7 +1058,8 @@ contract IdentityManager {
      * @param metadata 新的元数据哈希
      */
     function updateDeviceInfo(bytes32 did, string calldata name, bytes32 metadata) external {
-        require(devices[did].owner == msg.sender, "Not device owner");
+        // 允许设备所有者或设备的用户更新设备信息
+        require(devices[did].owner == msg.sender || devices[did].userAddress == msg.sender, "Not device owner or assigned user");
         require(devices[did].isActive, "Device is not active");
 
         devices[did].name = name;
