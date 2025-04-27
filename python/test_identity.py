@@ -79,7 +79,7 @@ class IdentityChainClient:
                 raise ValueError(f"未找到合约部署信息: {deployment_file}")
 
         # 加载合约ABI
-        abi_file = "./artifacts/contracts/IdentityManager.sol/IdentityManager.json"
+        abi_file = "./artifacts/contracts/Blockchain_Auth.sol/Blockchain_Auth.sol.json"
         if not os.path.exists(abi_file):
             raise ValueError(f"未找到合约ABI文件: {abi_file}")
 

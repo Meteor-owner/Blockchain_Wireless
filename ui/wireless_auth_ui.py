@@ -108,7 +108,7 @@ class BlockchainAuthApp:
         self.root.title("区块链无线网络身份验证系统")
         self.root.geometry("1200x800")
         self.root.configure(bg=COLORS["bg"])
-
+        self.client = None
         self.setup_styles()
         self.create_widgets()
         self.load_saved_data()
@@ -122,9 +122,6 @@ class BlockchainAuthApp:
         style.configure("Secondary.TButton", background=COLORS["secondary"])
         style.configure("Warning.TButton", background=COLORS["warning"])
 
-    # 在wireless_auth_ui.py中的BlockchainAuthApp类的create_widgets方法中添加用户标签页
-
-    # 在此处修改原来的create_widgets方法，添加用户管理标签页
     def create_widgets(self):
         """创建界面控件"""
         # 创建主框架
@@ -156,6 +153,7 @@ class BlockchainAuthApp:
         self.account_var = tk.StringVar(value="无")
         ttk.Label(self.connection_frame, textvariable=self.account_var).grid(row=1, column=1, columnspan=4, padx=5,
                                                                              pady=5, sticky=tk.W)
+        self.console = LogConsole(self.main_frame)
 
         # 创建标签页控件
         self.tab_control = ttk.Notebook(self.main_frame)
@@ -183,7 +181,6 @@ class BlockchainAuthApp:
         self.create_logs_tab()
 
         # 创建日志控制台
-        self.console = LogConsole(self.main_frame)
         self.console.info("应用已启动，请连接区块链网络")
 
     # 添加创建用户管理标签页的方法
@@ -481,7 +478,9 @@ class BlockchainAuthApp:
             def connect_thread():
                 global client
                 try:
-                    client = IdentityChainClient(network=network)
+                    self.client = IdentityChainClient(network=network)
+                    global client
+                    client = self.client
                     self.root.after(0, self.update_connection_status, True, client.account.address)
                     self.root.after(0, self.refresh_devices)
                     self.root.after(0, self.refresh_networks)
@@ -502,6 +501,11 @@ class BlockchainAuthApp:
 
             # 更新认证标签页的下拉菜单
             self.update_device_network_dropdowns()
+            if hasattr(self, 'user_mgmt_tab'):
+                self.user_mgmt_tab.client = self.client
+                self.user_mgmt_tab.refresh_user_info()
+                self.user_mgmt_tab.refresh_user_devices()
+                self.user_mgmt_tab.refresh_users_list()
         else:
             self.status_var.set("连接失败")
             self.console.error(f"连接失败: {message}")
