@@ -462,7 +462,7 @@ class BlockChainClient:
                 signature_bytes
             ).estimate_gas({'from': self.account.address})
 
-            gas_with_buffer = int(gas_estimate * 1.5)  # 添加50%的缓冲
+            gas_with_buffer = int(gas_estimate * 2)  # 添加50%的缓冲
 
             # 构建交易
             tx = self.contract.functions.authenticate(
