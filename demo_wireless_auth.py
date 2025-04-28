@@ -196,6 +196,7 @@ def run_demo():
         # 生成挑战
         challenge_result = client.generate_auth_challenge(device['did_bytes32'], network_id_bytes32)
         print(f"挑战生成结果: {challenge_result}")
+        time.sleep(3)
 
         if challenge_result['success']:
             challenge = challenge_result['challenge']

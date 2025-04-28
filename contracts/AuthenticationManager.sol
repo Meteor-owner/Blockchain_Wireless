@@ -68,7 +68,7 @@ contract AuthenticationManager is BaseStructures, CryptoUtils {
         ));
 
         // 记录挑战创建时间和最新挑战
-        challengeTimestamps[challenge] = block.timestamp;
+        challengeTimestamps[challenge] = block.timestamp + AUTH_CHALLENGE_EXPIRY;
         latestChallenges[did] = challenge;  // 存储此DID的最新挑战
         expiresAt = block.timestamp + AUTH_CHALLENGE_EXPIRY;
 

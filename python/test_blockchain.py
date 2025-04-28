@@ -365,11 +365,11 @@ class BlockChainClient:
 
     def generate_auth_challenge(self, did_bytes32: str, network_id_bytes32: str) -> Dict:
         try:
-            # 调用合约方法并直接获取返回值
-            challenge, expires_at = self.contract.functions.generateAuthChallenge(
-                self.w3.to_bytes(hexstr=did_bytes32),
-                self.w3.to_bytes(hexstr=network_id_bytes32)
-            ).call({'from': self.account.address})
+            # # 调用合约方法并直接获取返回值
+            # challenge, expires_at = self.contract.functions.generateAuthChallenge(
+            #     self.w3.to_bytes(hexstr=did_bytes32),
+            #     self.w3.to_bytes(hexstr=network_id_bytes32)
+            # ).call({'from': self.account.address})
 
             # 构建交易
             tx = self.contract.functions.generateAuthChallenge(
@@ -390,12 +390,42 @@ class BlockChainClient:
 
             # 等待交易确认
             tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
-
+            challenge_result = self.get_latest_challenge(did_bytes32)
             return {
                 'success': tx_receipt.status == 1,
                 'tx_hash': self.w3.to_hex(tx_hash),
+                'challenge': challenge_result['challenge'],
+                'expires_at': challenge_result['expires_at']
+            }
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e),
+                'traceback': traceback.format_exc()
+            }
+
+    def get_latest_challenge(self, did_bytes32: str) -> Dict:
+        """获取设备的最新挑战值
+
+        Args:
+            did_bytes32: 设备的分布式标识符 (bytes32格式)
+
+        Returns:
+            Dict: 包含最新挑战值的字典
+        """
+        try:
+            # 将did确保为bytes32
+            did_bytes32_bytes = self.w3.to_bytes(hexstr=did_bytes32)
+
+            # 调用合约方法
+            challenge, timestamp = self.contract.functions.getLatestChallenge(
+                did_bytes32_bytes
+            ).call({'from': self.account.address})
+
+            return {
+                'success': True,
                 'challenge': self.w3.to_hex(challenge),
-                'expires_at': expires_at
+                'expires_at': timestamp
             }
         except Exception as e:
             return {
@@ -772,7 +802,7 @@ class BlockChainClient:
                 name,
                 email,
                 b'',  # 如果是普通用户注册，不需要提供公钥
-                b''   # 如果是普通用户注册，不需要提供签名
+                b''  # 如果是普通用户注册，不需要提供签名
             ).build_transaction({
                 'from': self.account.address,
                 'nonce': self.w3.eth.get_transaction_count(self.account.address),
