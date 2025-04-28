@@ -1,6 +1,7 @@
 """
 区块链无线网络身份验证系统 - Python 接口测试
-CSEC5615 云安全项目
+CSEC5615 云安全项目 - 更新版本
+基于Blockchain_Auth.sol合约
 """
 
 import json
@@ -24,7 +25,7 @@ load_dotenv()
 
 
 class IdentityChainClient:
-    """与IdentityManager智能合约的Python接口"""
+    """与Blockchain_Auth智能合约的Python接口"""
 
     def __init__(self, network="localhost", contract_address=None):
         """初始化Web3连接和合约接口"""
@@ -33,9 +34,9 @@ class IdentityChainClient:
             self.w3 = Web3(Web3.HTTPProvider("http://127.0.0.1:8545"))
         elif network == "sepolia":
             # 需要在环境变量中设置 INFURA_API_KEY
-            infura_key = os.getenv("INFURA_API_KEY")
+            infura_key = os.getenv("INFURA_KEY")
             if not infura_key:
-                raise ValueError("使用Sepolia网络需要设置INFURA_API_KEY环境变量")
+                raise ValueError("使用Sepolia网络需要设置INFURA_KEY环境变量")
             self.w3 = Web3(Web3.HTTPProvider(f"https://sepolia.infura.io/v3/{infura_key}"))
             self.w3.middleware_onion.inject(geth_poa_middleware, layer=0)
         else:
@@ -64,7 +65,7 @@ class IdentityChainClient:
             print(f"使用提供的合约地址: {self.contract_address}")
         else:
             # 从deployments目录加载合约地址
-            deployment_file = f"./deployments/identity-manager-{network}.json"
+            deployment_file = f"./deployments/blockchain-auth-{network}.json"
             if os.path.exists(deployment_file):
                 try:
                     with open(deployment_file, 'r') as f:
@@ -79,7 +80,7 @@ class IdentityChainClient:
                 raise ValueError(f"未找到合约部署信息: {deployment_file}")
 
         # 加载合约ABI
-        abi_file = "./artifacts/contracts/Blockchain_Auth.sol/Blockchain_Auth.sol.json"
+        abi_file = "./artifacts/contracts/Blockchain_Auth.sol/Blockchain_Auth.json"
         if not os.path.exists(abi_file):
             raise ValueError(f"未找到合约ABI文件: {abi_file}")
 
@@ -161,18 +162,8 @@ class IdentityChainClient:
             # 签名交易
             signed_tx = self.w3.eth.account.sign_transaction(tx, self.account.key)
 
-            # 发送交易 - 处理不同版本的Web3.py
-            tx_hash = None
-            if hasattr(signed_tx, 'rawTransaction'):
-                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
-            elif hasattr(signed_tx, 'raw_transaction'):
-                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
-            else:
-                # 尝试直接获取
-                try:
-                    tx_hash = self.w3.eth.send_raw_transaction(signed_tx['rawTransaction'])
-                except:
-                    tx_hash = self.w3.eth.send_raw_transaction(signed_tx)
+            # 发送交易
+            tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
 
             # 等待交易确认
             tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
@@ -222,7 +213,6 @@ class IdentityChainClient:
             metadata_bytes32 = self.w3.to_bytes(text=metadata).ljust(32, b'\0')
 
             # 这里假设系统管理员直接授权注册
-            authorizer_address = self.account.address
             signature = b''
 
             # 构建交易
@@ -232,7 +222,7 @@ class IdentityChainClient:
                 public_key_bytes,  # 公钥 (bytes)
                 name,  # 设备名称 (string)
                 metadata_bytes32,  # 元数据哈希 (bytes32)
-                signature  # 空签名，因为我们假设以管理员身份调用
+                signature  # 签名，空签名表示管理员直接调用
             ).build_transaction({
                 'from': self.account.address,
                 'nonce': self.w3.eth.get_transaction_count(self.account.address),
@@ -243,18 +233,8 @@ class IdentityChainClient:
             # 签名交易
             signed_tx = self.w3.eth.account.sign_transaction(tx, self.account.key)
 
-            # 发送交易 - 处理不同版本的Web3.py
-            tx_hash = None
-            if hasattr(signed_tx, 'rawTransaction'):
-                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
-            elif hasattr(signed_tx, 'raw_transaction'):
-                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
-            else:
-                # 尝试直接获取
-                try:
-                    tx_hash = self.w3.eth.send_raw_transaction(signed_tx['rawTransaction'])
-                except:
-                    tx_hash = self.w3.eth.send_raw_transaction(signed_tx)
+            # 发送交易
+            tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
 
             # 等待交易确认
             tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
@@ -291,18 +271,8 @@ class IdentityChainClient:
             # 签名交易
             signed_tx = self.w3.eth.account.sign_transaction(tx, self.account.key)
 
-            # 发送交易 - 处理不同版本的Web3.py
-            tx_hash = None
-            if hasattr(signed_tx, 'rawTransaction'):
-                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
-            elif hasattr(signed_tx, 'raw_transaction'):
-                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
-            else:
-                # 尝试直接获取
-                try:
-                    tx_hash = self.w3.eth.send_raw_transaction(signed_tx['rawTransaction'])
-                except:
-                    tx_hash = self.w3.eth.send_raw_transaction(signed_tx)
+            # 发送交易
+            tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
 
             # 等待交易确认
             tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
@@ -335,18 +305,8 @@ class IdentityChainClient:
             # 签名交易
             signed_tx = self.w3.eth.account.sign_transaction(tx, self.account.key)
 
-            # 发送交易 - 处理不同版本的Web3.py
-            tx_hash = None
-            if hasattr(signed_tx, 'rawTransaction'):
-                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
-            elif hasattr(signed_tx, 'raw_transaction'):
-                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
-            else:
-                # 尝试直接获取
-                try:
-                    tx_hash = self.w3.eth.send_raw_transaction(signed_tx['rawTransaction'])
-                except:
-                    tx_hash = self.w3.eth.send_raw_transaction(signed_tx)
+            # 发送交易
+            tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
 
             # 等待交易确认
             tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
@@ -396,10 +356,6 @@ class IdentityChainClient:
             account = Account.from_key(private_key)
             signed_message = account.sign_message(eth_message)
 
-            print(f"签名消息哈希: {message_hash.hex()}")
-            print(f"签名结果: {signed_message.signature.hex()}")
-            print(f"签名长度: {len(signed_message.signature)} 字节")
-
             # 返回签名结果
             return signed_message.signature.hex()
         except Exception as e:
@@ -425,21 +381,14 @@ class IdentityChainClient:
             signed_tx = self.w3.eth.account.sign_transaction(tx, self.account.key)
 
             # 发送交易
-            if hasattr(signed_tx, 'rawTransaction'):
-                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
-            elif hasattr(signed_tx, 'raw_transaction'):
-                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
-            else:
-                try:
-                    tx_hash = self.w3.eth.send_raw_transaction(signed_tx['rawTransaction'])
-                except:
-                    tx_hash = self.w3.eth.send_raw_transaction(signed_tx)
+            tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
 
             # 等待交易确认
             tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
 
             # 从事件日志中获取挑战值
             challenge = None
+            expires_at = None
             if tx_receipt.status == 1:
                 logs = self.contract.events.AuthChallengeGenerated().process_receipt(tx_receipt)
                 if logs:
@@ -450,7 +399,7 @@ class IdentityChainClient:
                 'success': tx_receipt.status == 1,
                 'tx_hash': self.w3.to_hex(tx_hash),
                 'challenge': challenge,
-                'expires_at': expires_at if 'expires_at' in locals() else None
+                'expires_at': expires_at
             }
         except Exception as e:
             return {
@@ -463,15 +412,13 @@ class IdentityChainClient:
         """验证设备并获取访问令牌"""
         try:
             # 将did和network_id确保为bytes32
-            did_bytes32_bytes = self.w3.to_bytes(hexstr=did_bytes32).ljust(32, b'\0')
-            network_id_bytes32_bytes = self.w3.to_bytes(hexstr=network_id_bytes32).ljust(32, b'\0')
+            did_bytes32_bytes = self.w3.to_bytes(hexstr=did_bytes32)
+            network_id_bytes32_bytes = self.w3.to_bytes(hexstr=network_id_bytes32)
 
             # 将挑战转换为bytes32
-            # 如果challenge已经是十六进制，则直接转换
             if challenge.startswith('0x'):
-                challenge_bytes32 = self.w3.to_bytes(hexstr=challenge).ljust(32, b'\0')
+                challenge_bytes32 = self.w3.to_bytes(hexstr=challenge)
             else:
-                # 否则先进行哈希处理，确保长度为32字节
                 challenge_hash = hashlib.sha256(challenge.encode()).digest()
                 challenge_bytes32 = challenge_hash
 
@@ -481,21 +428,15 @@ class IdentityChainClient:
             else:
                 signature_bytes = bytes.fromhex(signature)
 
-            print(f"认证参数类型:")
-            print(f"- did_bytes32: {type(did_bytes32_bytes)}, 长度: {len(did_bytes32_bytes)}")
-            print(f"- network_id_bytes32: {type(network_id_bytes32_bytes)}, 长度: {len(network_id_bytes32_bytes)}")
-            print(f"- challenge_bytes32: {challenge_bytes32}, 长度: {len(challenge_bytes32)}")
-            print(f"- signature_bytes: {signature_bytes.hex()}, 长度: {len(signature_bytes)}")
-
+            # 估计需要的gas
             gas_estimate = self.contract.functions.authenticate(
-                did_bytes32_bytes,  # 确保是32字节长度
-                network_id_bytes32_bytes,  # 确保是32字节长度
-                challenge_bytes32,  # 确保是32字节长度
+                did_bytes32_bytes,
+                network_id_bytes32_bytes,
+                challenge_bytes32,
                 signature_bytes
             ).estimate_gas({'from': self.account.address})
 
-            print(f"估计需要的gas: {gas_estimate}")
-            gas_with_buffer = int(gas_estimate * 1.5)
+            gas_with_buffer = int(gas_estimate * 1.5)  # 添加50%的缓冲
 
             # 构建交易
             tx = self.contract.functions.authenticate(
@@ -513,18 +454,8 @@ class IdentityChainClient:
             # 签名交易
             signed_tx = self.w3.eth.account.sign_transaction(tx, self.account.key)
 
-            # 发送交易 - 处理不同版本的Web3.py
-            tx_hash = None
-            if hasattr(signed_tx, 'rawTransaction'):
-                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
-            elif hasattr(signed_tx, 'raw_transaction'):
-                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
-            else:
-                # 尝试直接获取
-                try:
-                    tx_hash = self.w3.eth.send_raw_transaction(signed_tx['rawTransaction'])
-                except:
-                    tx_hash = self.w3.eth.send_raw_transaction(signed_tx)
+            # 发送交易
+            tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
 
             # 等待交易确认
             tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
@@ -582,18 +513,8 @@ class IdentityChainClient:
             # 签名交易
             signed_tx = self.w3.eth.account.sign_transaction(tx, self.account.key)
 
-            # 发送交易 - 处理不同版本的Web3.py
-            tx_hash = None
-            if hasattr(signed_tx, 'rawTransaction'):
-                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
-            elif hasattr(signed_tx, 'raw_transaction'):
-                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
-            else:
-                # 尝试直接获取
-                try:
-                    tx_hash = self.w3.eth.send_raw_transaction(signed_tx['rawTransaction'])
-                except:
-                    tx_hash = self.w3.eth.send_raw_transaction(signed_tx)
+            # 发送交易
+            tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
 
             # 等待交易确认
             tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
@@ -626,7 +547,8 @@ class IdentityChainClient:
                 'is_active': device_info[4],
                 'name': device_info[5],
                 'metadata': self.w3.to_hex(device_info[6]),
-                'authorized_by': device_info[7]
+                'authorized_by': device_info[7],
+                'user_address': device_info[8]  # 新合约增加的字段
             }
         except Exception as e:
             return {
@@ -670,18 +592,8 @@ class IdentityChainClient:
             # 签名交易
             signed_tx = self.w3.eth.account.sign_transaction(tx, self.account.key)
 
-            # 发送交易 - 处理不同版本的Web3.py
-            tx_hash = None
-            if hasattr(signed_tx, 'rawTransaction'):
-                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
-            elif hasattr(signed_tx, 'raw_transaction'):
-                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
-            else:
-                # 尝试直接获取
-                try:
-                    tx_hash = self.w3.eth.send_raw_transaction(signed_tx['rawTransaction'])
-                except:
-                    tx_hash = self.w3.eth.send_raw_transaction(signed_tx)
+            # 发送交易
+            tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
 
             # 等待交易确认
             tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
@@ -723,18 +635,8 @@ class IdentityChainClient:
             # 签名交易
             signed_tx = self.w3.eth.account.sign_transaction(tx, self.account.key)
 
-            # 发送交易 - 处理不同版本的Web3.py
-            tx_hash = None
-            if hasattr(signed_tx, 'rawTransaction'):
-                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
-            elif hasattr(signed_tx, 'raw_transaction'):
-                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
-            else:
-                # 尝试直接获取
-                try:
-                    tx_hash = self.w3.eth.send_raw_transaction(signed_tx['rawTransaction'])
-                except:
-                    tx_hash = self.w3.eth.send_raw_transaction(signed_tx)
+            # 发送交易
+            tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
 
             # 等待交易确认
             tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
@@ -751,22 +653,16 @@ class IdentityChainClient:
                 'traceback': traceback.format_exc()
             }
 
-    def get_owner_devices(self, owner_address=None) -> Dict:
+    def get_owner_devices(self) -> Dict:
         """获取用户拥有的设备列表
-
-        Args:
-            owner_address: 所有者地址，默认为当前账户
 
         Returns:
             Dict: 包含设备列表的字典
         """
         try:
-            if owner_address is None:
-                owner_address = self.account.address
-
             # 调用合约方法
             devices = self.contract.functions.getOwnerDevices(
-                owner_address
+                self.account.address
             ).call({'from': self.account.address})
 
             # 转换为可读格式
@@ -784,22 +680,16 @@ class IdentityChainClient:
                 'traceback': traceback.format_exc()
             }
 
-    def get_owner_networks(self, owner_address=None) -> Dict:
+    def get_owner_networks(self) -> Dict:
         """获取用户拥有的网络列表
-
-        Args:
-            owner_address: 所有者地址，默认为当前账户
 
         Returns:
             Dict: 包含网络列表的字典
         """
         try:
-            if owner_address is None:
-                owner_address = self.account.address
-
             # 调用合约方法
             networks = self.contract.functions.getOwnerNetworks(
-                owner_address
+                self.account.address
             ).call({'from': self.account.address})
 
             # 转换为可读格式
@@ -869,8 +759,7 @@ class IdentityChainClient:
                 'error': str(e)
             }
 
-    # 添加以下方法到python/test_identity.py中的IdentityChainClient类
-
+    # 用户管理相关功能
     def register_user(self, name: str, email: str) -> Dict:
         """注册新用户
 
@@ -885,7 +774,9 @@ class IdentityChainClient:
             # 构建交易
             tx = self.contract.functions.registerUser(
                 name,
-                email
+                email,
+                b'',  # 如果是普通用户注册，不需要提供公钥
+                b''   # 如果是普通用户注册，不需要提供签名
             ).build_transaction({
                 'from': self.account.address,
                 'nonce': self.w3.eth.get_transaction_count(self.account.address),
@@ -897,17 +788,7 @@ class IdentityChainClient:
             signed_tx = self.w3.eth.account.sign_transaction(tx, self.account.key)
 
             # 发送交易
-            tx_hash = None
-            if hasattr(signed_tx, 'rawTransaction'):
-                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
-            elif hasattr(signed_tx, 'raw_transaction'):
-                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
-            else:
-                # 尝试直接获取
-                try:
-                    tx_hash = self.w3.eth.send_raw_transaction(signed_tx['rawTransaction'])
-                except:
-                    tx_hash = self.w3.eth.send_raw_transaction(signed_tx)
+            tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
 
             # 等待交易确认
             tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
@@ -938,7 +819,8 @@ class IdentityChainClient:
             # 构建交易
             tx = self.contract.functions.updateUserInfo(
                 name,
-                email
+                email,
+                b''  # 如果不更新公钥，传入空字节
             ).build_transaction({
                 'from': self.account.address,
                 'nonce': self.w3.eth.get_transaction_count(self.account.address),
@@ -950,17 +832,7 @@ class IdentityChainClient:
             signed_tx = self.w3.eth.account.sign_transaction(tx, self.account.key)
 
             # 发送交易
-            tx_hash = None
-            if hasattr(signed_tx, 'rawTransaction'):
-                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
-            elif hasattr(signed_tx, 'raw_transaction'):
-                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
-            else:
-                # 尝试直接获取
-                try:
-                    tx_hash = self.w3.eth.send_raw_transaction(signed_tx['rawTransaction'])
-                except:
-                    tx_hash = self.w3.eth.send_raw_transaction(signed_tx)
+            tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
 
             # 等待交易确认
             tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
@@ -996,17 +868,7 @@ class IdentityChainClient:
             signed_tx = self.w3.eth.account.sign_transaction(tx, self.account.key)
 
             # 发送交易
-            tx_hash = None
-            if hasattr(signed_tx, 'rawTransaction'):
-                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
-            elif hasattr(signed_tx, 'raw_transaction'):
-                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
-            else:
-                # 尝试直接获取
-                try:
-                    tx_hash = self.w3.eth.send_raw_transaction(signed_tx['rawTransaction'])
-                except:
-                    tx_hash = self.w3.eth.send_raw_transaction(signed_tx)
+            tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
 
             # 等待交易确认
             tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
@@ -1037,19 +899,21 @@ class IdentityChainClient:
                 user_address = self.account.address
 
             # 调用合约方法
-            result = self.contract.functions.getUserInfo(
+            user_info = self.contract.functions.getUserInfo(
                 user_address
             ).call({'from': self.account.address})
 
             return {
                 'success': True,
-                'name': result[0],
-                'email': result[1],
-                'registered_at': result[2],
-                'is_active': result[3],
-                'device_count': result[4],
-                'network_count': result[5],
-                'role': self.w3.to_hex(result[6])
+                'name': user_info[0],
+                'email': user_info[1],
+                'public_key': user_info[2].hex() if user_info[2] else '',
+                'registered_at': user_info[3],
+                'is_active': user_info[4],
+                'device_count': user_info[5],
+                'network_count': user_info[6],
+                'role': user_info[7],
+                'authorized_by': user_info[8]
             }
         except Exception as e:
             return {
@@ -1131,7 +995,8 @@ class IdentityChainClient:
                 'success': True,
                 'addresses': result[0],
                 'names': result[1],
-                'is_actives': result[2]
+                'is_actives': result[2],
+                'roles': result[3]
             }
         except Exception as e:
             return {
@@ -1140,6 +1005,7 @@ class IdentityChainClient:
                 'addresses': [],
                 'names': [],
                 'is_actives': [],
+                'roles': [],
                 'traceback': traceback.format_exc()
             }
 
@@ -1191,7 +1057,7 @@ class IdentityChainClient:
         """
         try:
             # 构建交易
-            tx = self.contract.functions.assignDeviceToUser(
+            tx = self.contract.functions.transferDevice(
                 self.w3.to_bytes(hexstr=device_id),
                 user_address
             ).build_transaction({
@@ -1205,17 +1071,7 @@ class IdentityChainClient:
             signed_tx = self.w3.eth.account.sign_transaction(tx, self.account.key)
 
             # 发送交易
-            tx_hash = None
-            if hasattr(signed_tx, 'rawTransaction'):
-                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
-            elif hasattr(signed_tx, 'raw_transaction'):
-                tx_hash = self.w3.eth.send_raw_transaction(signed_tx.raw_transaction)
-            else:
-                # 尝试直接获取
-                try:
-                    tx_hash = self.w3.eth.send_raw_transaction(signed_tx['rawTransaction'])
-                except:
-                    tx_hash = self.w3.eth.send_raw_transaction(signed_tx)
+            tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
 
             # 等待交易确认
             tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)

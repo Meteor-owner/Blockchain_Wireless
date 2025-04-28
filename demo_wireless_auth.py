@@ -1,6 +1,7 @@
 """
-区块链无线网络身份验证系统演示脚本
+区块链无线网络身份验证系统演示脚本 - 更新版本
 CSEC5615 云安全项目
+适配Blockchain_Auth.sol合约
 """
 
 import os
@@ -38,7 +39,7 @@ def check_environment():
     print_section("环境检查")
 
     # 检查是否已编译合约
-    artifacts_path = "./artifacts/contracts/IdentityManager.sol/IdentityManager.json"
+    artifacts_path = "./artifacts/contracts/Blockchain_Auth.sol/Blockchain_Auth.json"
     if not os.path.exists(artifacts_path):
         print_error(f"未找到合约构建文件: {artifacts_path}")
         print_info("请先运行 'npx hardhat compile' 编译合约")
@@ -74,6 +75,32 @@ def run_demo():
         print_error(f"连接失败: {str(e)}")
         print_info("请确保本地区块链节点正在运行 (npx hardhat node)")
         return
+
+    # 步骤0: 检查用户注册状态并注册用户
+    print_section("步骤0: 注册用户")
+    user_check = client.is_registered_user()
+
+    if user_check['success'] and user_check['is_registered']:
+        print_success("当前账户已注册为用户")
+        # 获取用户信息
+        user_info = client.get_user_info()
+        if user_info['success']:
+            print_info(f"用户名: {user_info['name']}")
+            print_info(f"电子邮箱: {user_info['email']}")
+            print_info(f"角色: {user_info['role']}")
+    else:
+        print_info("当前账户未注册，正在注册新用户...")
+        user_name = "Demo User"
+        user_email = "demo@example.com"
+        register_result = client.register_user(user_name, user_email)
+
+        if register_result['success']:
+            print_success(f"用户注册成功: {user_name}")
+        else:
+            print_error(f"用户注册失败: {register_result.get('error', '未知错误')}")
+            if 'traceback' in register_result:
+                print(f"异常堆栈:\n{register_result['traceback']}")
+            return
 
     # 步骤1: 创建网络
     print_section("步骤1: 创建无线网络")
@@ -161,12 +188,12 @@ def run_demo():
             print_error(f"授权失败: {device['name']}")
             print_info(f"错误: {result.get('error', '未知错误')}")
 
-    # 步骤4: 模拟设备认证流程的更新版本
+    # 步骤4: 模拟设备认证流程
     print_section("步骤4: 模拟设备认证流程")
     for device in devices:
         print(f"\n🔑 正在认证设备: {device['name']}")
 
-        # 生成挑战 - 使用新的生成挑战函数
+        # 生成挑战
         challenge_result = client.generate_auth_challenge(device['did_bytes32'], network_id_bytes32)
 
         if challenge_result['success']:
@@ -199,7 +226,7 @@ def run_demo():
         else:
             print_error(f"生成挑战失败")
             print_info(f"错误: {challenge_result.get('error', '未知错误')}")
-# def demo2():
+
     # 步骤5: 更新设备信息
     print_section("步骤5: 更新设备信息")
     if len(devices) > 0:
@@ -216,39 +243,35 @@ def run_demo():
             new_metadata = f"updated_{uuid.uuid4().hex[:8]}"
 
             try:
-                # 检查update_device_info方法是否存在
-                if hasattr(client, 'update_device_info'):
-                    update_result = client.update_device_info(
-                        device['did_bytes32'],
-                        new_name,
-                        new_metadata
-                    )
+                update_result = client.update_device_info(
+                    device['did_bytes32'],
+                    new_name,
+                    new_metadata
+                )
 
-                    if update_result['success']:
-                        print_success(f"设备信息更新成功")
+                if update_result['success']:
+                    print_success(f"设备信息更新成功")
 
-                        # 验证更新后的信息
-                        updated_info = client.get_device_info(device['did_bytes32'])
-                        if updated_info['success']:
-                            print_info(f"设备更新后名称: {updated_info['name']}")
-                            print_info(f"设备更新后元数据: {updated_info['metadata']}")
+                    # 验证更新后的信息
+                    updated_info = client.get_device_info(device['did_bytes32'])
+                    if updated_info['success']:
+                        print_info(f"设备更新后名称: {updated_info['name']}")
+                        print_info(f"设备更新后元数据: {updated_info['metadata']}")
 
-                            if updated_info['name'] == new_name:
-                                print_success("设备名称更新验证成功")
-                            else:
-                                print_error("设备名称更新验证失败")
-                    else:
-                        print_error(f"设备信息更新失败")
-                        print_info(f"错误: {update_result.get('error', '未知错误')}")
+                        if updated_info['name'] == new_name:
+                            print_success("设备名称更新验证成功")
+                        else:
+                            print_error("设备名称更新验证失败")
                 else:
-                    print_info("当前版本不支持更新设备信息，跳过此步骤")
+                    print_error(f"设备信息更新失败")
+                    print_info(f"错误: {update_result.get('error', '未知错误')}")
             except Exception as e:
                 print_error(f"更新设备信息时出错: {str(e)}")
                 print_info("可能是当前版本不支持此功能，继续下一步")
         else:
             print_error(f"获取设备原始信息失败")
 
-    # 步骤6: 模拟一个恶意认证尝试的更新版本
+    # 步骤6: 模拟一个恶意认证尝试
     print_section("步骤6: 模拟恶意认证尝试")
     if len(devices) > 0:
         device = devices[0]
@@ -378,15 +401,16 @@ def run_demo():
             print_error(f"撤销令牌失败: {device['name']}")
             print_info(f"错误: {result.get('error', '未知错误')}")
 
-    # 步骤10: 尝试停用设备 (如果支持)
+    # 步骤10: 尝试停用设备
     print_section("步骤10: 停用设备")
     if len(devices) > 2:
         device = devices[2]  # 选择第三个设备
         print_info(f"选择设备: {device['name']}")
 
         try:
-            # 检查deactivate_device方法是否存在
-            if hasattr(client, 'deactivate_device'):
+            # 检查设备是否活跃
+            device_info = client.get_device_info(device['did_bytes32'])
+            if device_info['success'] and device_info['is_active']:
                 # 停用设备
                 result = client.deactivate_device(device['did_bytes32'])
                 if result['success']:
@@ -405,45 +429,99 @@ def run_demo():
                     print_error(f"停用设备失败: {device['name']}")
                     print_info(f"错误: {result.get('error', '未知错误')}")
             else:
-                print_info("当前版本不支持停用设备功能，跳过此步骤")
+                print_info("设备已处于停用状态，跳过此步骤")
         except Exception as e:
             print_error(f"停用设备时出错: {str(e)}")
             print_info("可能是当前版本不支持此功能，继续下一步")
 
-    # 步骤11: 查看拥有的设备和网络 (如果支持)
+    # 步骤11: 查看拥有的设备和网络
     print_section("步骤11: 查看用户拥有的设备和网络")
 
     try:
-        # 检查是否支持获取设备列表功能
-        if hasattr(client, 'get_owner_devices'):
-            # 获取设备列表
-            devices_result = client.get_owner_devices()
-            if devices_result['success']:
-                print_success(f"当前账户拥有 {devices_result['device_count']} 个设备")
-                for i, did in enumerate(devices_result['devices']):
-                    print(f"  [{i+1}] 设备ID: {did}")
-            else:
-                print_error(f"获取设备列表失败")
-                print_info(f"错误: {devices_result.get('error', '未知错误')}")
+        # 获取设备列表
+        devices_result = client.get_owner_devices()
+        if devices_result['success']:
+            print_success(f"当前账户拥有 {devices_result['device_count']} 个设备")
+            for i, did in enumerate(devices_result['devices']):
+                print(f"  [{i+1}] 设备ID: {did}")
         else:
-            print_info("当前版本不支持获取设备列表功能，跳过此步骤")
+            print_error(f"获取设备列表失败")
+            print_info(f"错误: {devices_result.get('error', '未知错误')}")
 
-        # 检查是否支持获取网络列表功能
-        if hasattr(client, 'get_owner_networks'):
-            # 获取网络列表
-            networks_result = client.get_owner_networks()
-            if networks_result['success']:
-                print_success(f"当前账户拥有 {networks_result['network_count']} 个网络")
-                for i, nid in enumerate(networks_result['networks']):
-                    print(f"  [{i+1}] 网络ID: {nid}")
-            else:
-                print_error(f"获取网络列表失败")
-                print_info(f"错误: {networks_result.get('error', '未知错误')}")
+        # 获取网络列表
+        networks_result = client.get_owner_networks()
+        if networks_result['success']:
+            print_success(f"当前账户拥有 {networks_result['network_count']} 个网络")
+            for i, nid in enumerate(networks_result['networks']):
+                print(f"  [{i+1}] 网络ID: {nid}")
         else:
-            print_info("当前版本不支持获取网络列表功能，跳过此步骤")
+            print_error(f"获取网络列表失败")
+            print_info(f"错误: {networks_result.get('error', '未知错误')}")
     except Exception as e:
         print_error(f"查询拥有的设备和网络时出错: {str(e)}")
         print_info("可能是当前版本不支持此功能")
+
+    # 步骤12: 用户管理功能演示
+    print_section("步骤12: 用户管理功能演示")
+
+    # 获取用户数量
+    try:
+        user_count_result = client.get_user_count()
+        if user_count_result['success']:
+            print_success(f"系统中共有 {user_count_result['count']} 个用户")
+
+            # 获取用户列表
+            if user_count_result['count'] > 0:
+                users_result = client.get_user_list(0, min(5, user_count_result['count']))
+                if users_result['success']:
+                    print_success(f"用户列表前 {len(users_result['addresses'])} 个:")
+                    for i in range(len(users_result['addresses'])):
+                        role_text = "系统管理员" if users_result['roles'][i] == 2 else "网络管理员" if users_result['roles'][i] == 1 else "普通用户"
+                        print(f"  [{i+1}] {users_result['names'][i]} - {role_text} - {'活跃' if users_result['is_actives'][i] else '已停用'}")
+                else:
+                    print_error(f"获取用户列表失败")
+                    print_info(f"错误: {users_result.get('error', '未知错误')}")
+        else:
+            print_error(f"获取用户数量失败")
+            print_info(f"错误: {user_count_result.get('error', '未知错误')}")
+    except Exception as e:
+        print_error(f"用户管理功能演示时出错: {str(e)}")
+
+    # 用户信息更新演示
+    try:
+        print_info("\n演示用户信息更新:")
+        # 获取当前用户信息
+        original_info = client.get_user_info()
+        if original_info['success']:
+            print_info(f"当前用户名: {original_info['name']}")
+            print_info(f"当前用户邮箱: {original_info['email']}")
+
+            # 更新用户信息
+            updated_name = f"{original_info['name']}_updated"
+            updated_email = f"updated_{uuid.uuid4().hex[:6]}@example.com"
+
+            update_result = client.update_user_info(updated_name, updated_email)
+            if update_result['success']:
+                print_success(f"用户信息更新成功")
+
+                # 验证更新结果
+                updated_info = client.get_user_info()
+                if updated_info['success']:
+                    print_info(f"更新后用户名: {updated_info['name']}")
+                    print_info(f"更新后邮箱: {updated_info['email']}")
+
+                    if updated_info['name'] == updated_name and updated_info['email'] == updated_email:
+                        print_success("用户信息更新验证成功")
+                    else:
+                        print_error("用户信息更新验证失败")
+            else:
+                print_error(f"用户信息更新失败")
+                print_info(f"错误: {update_result.get('error', '未知错误')}")
+        else:
+            print_error(f"获取用户信息失败")
+            print_info(f"错误: {original_info.get('error', '未知错误')}")
+    except Exception as e:
+        print_error(f"用户信息更新演示时出错: {str(e)}")
     
     print_header("演示完成!")
     print_info("区块链无线网络身份验证系统已成功演示")

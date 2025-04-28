@@ -1,10 +1,10 @@
-// 合约部署脚本
+// 合约部署脚本 - 模块化版本
 const hre = require("hardhat");
 const fs = require("fs");
 const path = require("path");
 
 async function main() {
-  console.log("开始部署 Blockchain_Auth 合约...");
+  console.log("开始部署区块链无线网络身份验证系统合约...");
 
   // 获取部署账户
   const [deployer] = await hre.ethers.getSigners();
@@ -30,73 +30,110 @@ async function main() {
     process.exit(1);
   }
 
-  // 获取合约工厂
-  console.log("创建合约工厂...");
-  const BlockchainAuth = await hre.ethers.getContractFactory("Blockchain_Auth", {
-    viaIR: true
-  });
+  try {
+    console.log("开始部署模块化合约...");
 
-  // 部署合约
-  console.log("开始部署合约...");
-  const blockchainAuth = await BlockchainAuth.deploy();
+    // 1. 部署主合约 BlockchainAuthMain
+    console.log("部署 BlockchainAuthMain 合约...");
+    const BlockchainAuthMain = await hre.ethers.getContractFactory("BlockchainAuthMain");
+    const blockchainAuthMain = await BlockchainAuthMain.deploy();
+    await blockchainAuthMain.deployed();
+    console.log(`BlockchainAuthMain 合约已部署至: ${blockchainAuthMain.address}`);
 
-  // 等待合约部署完成
-  console.log("等待交易确认...");
-  await blockchainAuth.deployed();
+    // 2. 获取子合约地址
+    console.log("获取子合约地址...");
+    const userManagerAddress = await blockchainAuthMain.userManager();
+    const deviceManagerAddress = await blockchainAuthMain.deviceManager();
+    const networkManagerAddress = await blockchainAuthMain.networkManager();
+    const authManagerAddress = await blockchainAuthMain.authManager();
 
-  console.log(`Blockchain_Auth 合约已部署至: ${blockchainAuth.address}`);
-  console.log(`部署者(系统管理员): ${deployer.address}`);
+    console.log(`UserManagement 合约地址: ${userManagerAddress}`);
+    console.log(`DeviceManagement 合约地址: ${deviceManagerAddress}`);
+    console.log(`NetworkManagement 合约地址: ${networkManagerAddress}`);
+    console.log(`AuthenticationManager 合约地址: ${authManagerAddress}`);
 
-  // 创建 deployments 目录（如果不存在）
-  const deploymentsDir = "./deployments";
-  if (!fs.existsSync(deploymentsDir)) {
-    fs.mkdirSync(deploymentsDir);
-  }
+    // 保存合约部署信息
+    const deploymentData = {
+      network: hre.network.name,
+      mainContract: {
+        name: "BlockchainAuthMain",
+        address: blockchainAuthMain.address,
+        deployer: deployer.address,
+        deploymentTime: new Date().toISOString(),
+        systemAdmin: deployer.address
+      },
+      subContracts: {
+        userManagement: userManagerAddress,
+        deviceManagement: deviceManagerAddress,
+        networkManagement: networkManagerAddress,
+        authenticationManager: authManagerAddress
+      },
+      networkInfo: {
+        chainId: hre.network.config.chainId,
+        gasPrice: (await hre.ethers.provider.getGasPrice()).toString()
+      }
+    };
 
-  // 保存部署信息
-  const deploymentData = {
-    network: hre.network.name,
-    contract: {
-      name: "Blockchain_Auth",
-      address: blockchainAuth.address,
-      deployer: deployer.address,
-      deploymentTime: new Date().toISOString(),
-      systemAdmin: deployer.address
-    },
-    networkInfo: {
-      chainId: hre.network.config.chainId,
-      gasPrice: (await hre.ethers.provider.getGasPrice()).toString()
+    // 创建 deployments 目录（如果不存在）
+    const deploymentsDir = "./deployments";
+    if (!fs.existsSync(deploymentsDir)) {
+      fs.mkdirSync(deploymentsDir);
     }
-  };
 
-  const deploymentFilePath = path.join(deploymentsDir, `blockchain-auth-${hre.network.name}.json`);
-  fs.writeFileSync(
-    deploymentFilePath,
-    JSON.stringify(deploymentData, null, 2)
-  );
+    // 保存部署信息
+    const deploymentFilePath = path.join(deploymentsDir, `blockchain-auth-${hre.network.name}.json`);
+    fs.writeFileSync(
+      deploymentFilePath,
+      JSON.stringify(deploymentData, null, 2)
+    );
 
-  console.log("部署信息已保存至:", deploymentFilePath);
+    console.log("部署信息已保存至:", deploymentFilePath);
 
-  // 如果是测试网，生成Python接口调用示例（可自行取消注释）
-  if (["goerli", "sepolia", "localhost"].includes(hre.network.name)) {
-    // generatePythonExample(blockchainAuth.address, hre.network.name);
-  }
+    // 如果是主网或测试网，验证合约
+    if (["mainnet", "goerli", "sepolia"].includes(hre.network.name)) {
+      console.log("等待块确认以进行合约验证...");
+      await blockchainAuthMain.deployTransaction.wait(5);
 
-  // 如果是主网或测试网，验证合约
-  if (["mainnet", "goerli", "sepolia"].includes(hre.network.name)) {
-    console.log("等待块确认以进行合约验证...");
-    await blockchainAuth.deployTransaction.wait(5);
+      console.log("提交主合约验证...");
+      try {
+        await hre.run("verify:verify", {
+          address: blockchainAuthMain.address,
+          constructorArguments: [],
+        });
+        console.log("主合约验证成功");
 
-    console.log("提交合约验证...");
-    try {
-      await hre.run("verify:verify", {
-        address: blockchainAuth.address,
-        constructorArguments: [],
-      });
-      console.log("合约已成功验证");
-    } catch (error) {
-      console.error("合约验证失败:", error);
+        // 验证子合约
+        console.log("验证 UserManagement 合约...");
+        await hre.run("verify:verify", { address: userManagerAddress });
+
+        console.log("验证 DeviceManagement 合约...");
+        await hre.run("verify:verify", {
+          address: deviceManagerAddress,
+          constructorArguments: [userManagerAddress]
+        });
+
+        console.log("验证 NetworkManagement 合约...");
+        await hre.run("verify:verify", {
+          address: networkManagerAddress,
+          constructorArguments: [userManagerAddress]
+        });
+
+        console.log("验证 AuthenticationManager 合约...");
+        await hre.run("verify:verify", {
+          address: authManagerAddress,
+          constructorArguments: [deviceManagerAddress, networkManagerAddress]
+        });
+
+        console.log("所有合约验证成功");
+      } catch (error) {
+        console.error("合约验证失败:", error);
+      }
     }
+
+    console.log("合约部署完成！");
+  } catch (error) {
+    console.error("部署过程中出错:", error);
+    process.exit(1);
   }
 }
 
