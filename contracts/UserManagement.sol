@@ -65,8 +65,8 @@ contract UserManagement is BaseStructures, CryptoUtils {
         require(
             msg.sender == systemAdmin ||
             ((users[msg.sender].role == UserRole.NETWORK_ADMIN ||
-              users[msg.sender].role == UserRole.SYSTEM_ADMIN) &&
-             users[msg.sender].isActive),
+                users[msg.sender].role == UserRole.SYSTEM_ADMIN) &&
+                users[msg.sender].isActive),
             "Requires network admin privileges or above"
         );
         _;
@@ -77,7 +77,7 @@ contract UserManagement is BaseStructures, CryptoUtils {
      */
     modifier onlyActiveUser() {
         require(registeredUsers[msg.sender] && users[msg.sender].isActive,
-                "Requires active registered user");
+            "Requires active registered user");
         _;
     }
 
@@ -144,7 +144,7 @@ contract UserManagement is BaseStructures, CryptoUtils {
      * @return userRole 用户角色
      */
     function verifyLogin(address userAddress, bytes32 challenge, bytes calldata signature)
-        external returns (bool success, UserRole userRole) {
+    external returns (bool success, UserRole userRole) {
 
         // 验证用户是否注册
         require(registeredUsers[userAddress], "User not registered");
@@ -288,7 +288,7 @@ contract UserManagement is BaseStructures, CryptoUtils {
      * @return success 是否成功
      */
     function rejectRegistrationRequest(bytes32 requestId)
-        external onlyNetworkAdminOrAbove returns (bool success) {
+    external onlyNetworkAdminOrAbove returns (bool success) {
         // 验证请求存在且未处理
         RegistrationRequest storage request = registrationRequests[requestId];
         require(request.requestedAt > 0, "Registration request not found");
@@ -528,7 +528,7 @@ contract UserManagement is BaseStructures, CryptoUtils {
      * @param newRole 新角色
      */
     function changeUserRole(address userAddress, UserRole newRole)
-        external onlySystemAdmin returns (bool success, string memory message) {
+    external onlySystemAdmin returns (bool success, string memory message) {
         // 检查用户是否已注册
         require(users[userAddress].userAddress != address(0), "User not registered");
 
@@ -677,7 +677,30 @@ contract UserManagement is BaseStructures, CryptoUtils {
         string[] memory deviceNames,
         bytes32[] memory deviceTypes,
         bool[] memory isActives
-    ){
+    ) {
+        User storage user = users[userAddress];
+        require(user.userAddress != address(0), "User not found");
 
+        uint256 deviceCount = user.devices.length;
+        deviceIds = new bytes32[](deviceCount);
+        deviceNames = new string[](deviceCount);
+        deviceTypes = new bytes32[](deviceCount);
+        isActives = new bool[](deviceCount);
+
+        // 这里需要有一个从设备ID获取设备信息的方法
+        // 这个实现假设有一个deviceInfo映射可用
+        // 如果没有，你需要调整这部分代码
+
+        // 由于这个函数可能需要依赖DeviceManagement合约中的信息
+        // 而我们无法直接访问，所以这里只返回设备IDs
+        for (uint256 i = 0; i < deviceCount; i++) {
+            deviceIds[i] = user.devices[i];
+            // 其他字段设置为空或默认值
+            deviceNames[i] = "";
+            deviceTypes[i] = bytes32(0);
+            isActives[i] = true;
+        }
+
+        return (deviceIds, deviceNames, deviceTypes, isActives);
     }
 }

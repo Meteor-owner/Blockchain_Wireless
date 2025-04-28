@@ -71,7 +71,7 @@ class IdentityChainClient:
                     with open(deployment_file, 'r') as f:
                         deployment_data = json.load(f)
                         self.contract_address = Web3.to_checksum_address(
-                            deployment_data['contract']['address']
+                            deployment_data['mainContract']['address']
                         )
                     print(f"从部署文件加载合约地址: {self.contract_address}")
                 except Exception as e:
@@ -80,7 +80,7 @@ class IdentityChainClient:
                 raise ValueError(f"未找到合约部署信息: {deployment_file}")
 
         # 加载合约ABI
-        abi_file = "./artifacts/contracts/Blockchain_Auth.sol/Blockchain_Auth.json"
+        abi_file = f"./artifacts/contracts/BlockchainAuthMain.sol/BlockchainAuthMain.json"
         if not os.path.exists(abi_file):
             raise ValueError(f"未找到合约ABI文件: {abi_file}")
 

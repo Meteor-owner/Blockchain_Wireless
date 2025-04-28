@@ -39,7 +39,7 @@ def check_environment():
     print_section("环境检查")
 
     # 检查是否已编译合约
-    artifacts_path = "./artifacts/contracts/Blockchain_Auth.sol/Blockchain_Auth.json"
+    artifacts_path = "./artifacts/contracts/BlockchainAuthMain.sol/BlockchainAuthMain.json"
     if not os.path.exists(artifacts_path):
         print_error(f"未找到合约构建文件: {artifacts_path}")
         print_info("请先运行 'npx hardhat compile' 编译合约")
