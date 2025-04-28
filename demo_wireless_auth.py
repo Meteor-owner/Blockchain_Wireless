@@ -8,7 +8,7 @@ import os
 import sys
 import time
 import uuid
-from python.test_identity import IdentityChainClient
+from python.test_blockchain import BlockChainClient
 
 def print_header(text):
     """打印格式化的标题"""
@@ -65,7 +65,7 @@ def run_demo():
     print_section("初始化区块链连接")
 
     try:
-        client = IdentityChainClient(network="localhost")
+        client = BlockChainClient(network="localhost")
         print_success(f"已连接到区块链网络")
         print_info(f"使用账户: {client.account.address}")
 
@@ -195,6 +195,7 @@ def run_demo():
 
         # 生成挑战
         challenge_result = client.generate_auth_challenge(device['did_bytes32'], network_id_bytes32)
+        print(f"挑战生成结果: {challenge_result}")
 
         if challenge_result['success']:
             challenge = challenge_result['challenge']
@@ -208,6 +209,7 @@ def run_demo():
 
             # 验证设备并获取令牌
             auth_result = client.authenticate(device['did_bytes32'], network_id_bytes32, challenge, signature)
+            print(f"认证结果: {auth_result}")
 
             if auth_result['success']:
                 token_id = auth_result['token_id']
@@ -226,7 +228,7 @@ def run_demo():
         else:
             print_error(f"生成挑战失败")
             print_info(f"错误: {challenge_result.get('error', '未知错误')}")
-
+def demo2():
     # 步骤5: 更新设备信息
     print_section("步骤5: 更新设备信息")
     if len(devices) > 0:

@@ -17,7 +17,7 @@ from tkinter import ttk, messagebox, scrolledtext
 from tkinter.font import Font
 import json
 import traceback
-from python.test_identity import IdentityChainClient
+from python.test_blockchain import BlockChainClient
 
 # 全局变量
 client = None
@@ -478,7 +478,7 @@ class BlockchainAuthApp:
             def connect_thread():
                 global client
                 try:
-                    self.client = IdentityChainClient(network=network)
+                    self.client = BlockChainClient(network=network)
                     global client
                     client = self.client
                     self.root.after(0, self.update_connection_status, True, client.account.address)

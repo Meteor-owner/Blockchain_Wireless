@@ -27,6 +27,7 @@ contract BlockchainAuthMain is BaseStructures {
     string public version = "1.0.0";
     string public name = "Blockchain Auth System";
 
+    event AuthChallengeGenerated(bytes32 indexed did, bytes32 indexed networkId, bytes32 challenge, uint256 expiresAt);
     /**
      * @dev 构造函数，部署并初始化所有子合约
      */
@@ -154,7 +155,7 @@ contract BlockchainAuthMain is BaseStructures {
      * @dev 更新设备信息
      */
     function updateDeviceInfo(bytes32 did, string calldata name, bytes32 metadata)
-        external returns (bool success, string memory message) {
+    external returns (bool success, string memory message) {
         return deviceManager.updateDeviceInfo(did, name, metadata);
     }
 
@@ -176,7 +177,7 @@ contract BlockchainAuthMain is BaseStructures {
      * @dev 转移设备所有权
      */
     function transferDevice(bytes32 did, address newOwner)
-        external returns (bool success, string memory message) {
+    external returns (bool success, string memory message) {
         return deviceManager.transferDevice(did, newOwner);
     }
 
@@ -188,7 +189,7 @@ contract BlockchainAuthMain is BaseStructures {
      * @dev 创建新的无线网络
      */
     function createNetwork(bytes32 networkId, string calldata name)
-        external returns (bool success, string memory message) {
+    external returns (bool success, string memory message) {
         return networkManager.createNetwork(networkId, name);
     }
 
@@ -196,7 +197,7 @@ contract BlockchainAuthMain is BaseStructures {
      * @dev 授予设备访问网络的权限
      */
     function grantAccess(bytes32 did, bytes32 networkId)
-        external returns (bool success, string memory message) {
+    external returns (bool success, string memory message) {
         return networkManager.grantAccess(did, networkId);
     }
 
@@ -204,7 +205,7 @@ contract BlockchainAuthMain is BaseStructures {
      * @dev 批量授予设备访问网络的权限
      */
     function batchGrantAccess(bytes32[] calldata dids, bytes32 networkId)
-        external returns (uint256 successCount) {
+    external returns (uint256 successCount) {
         return networkManager.batchGrantAccess(dids, networkId);
     }
 
@@ -212,7 +213,7 @@ contract BlockchainAuthMain is BaseStructures {
      * @dev 撤销设备访问网络的权限
      */
     function revokeAccess(bytes32 did, bytes32 networkId)
-        external returns (bool success, string memory message) {
+    external returns (bool success, string memory message) {
         return networkManager.revokeAccess(did, networkId);
     }
 
@@ -220,7 +221,7 @@ contract BlockchainAuthMain is BaseStructures {
      * @dev 检查设备是否有权访问网络
      */
     function checkAccess(bytes32 did, bytes32 networkId)
-        external view returns (bool hasAccess) {
+    external view returns (bool hasAccess) {
         return networkManager.checkAccess(did, networkId);
     }
 
@@ -239,15 +240,26 @@ contract BlockchainAuthMain is BaseStructures {
      * @dev 生成认证挑战
      */
     function generateAuthChallenge(bytes32 did, bytes32 networkId)
-        external returns (bytes32 challenge, uint256 expiresAt) {
-        return authManager.generateAuthChallenge(did, networkId);
+    external returns (bytes32 challenge, uint256 expiresAt) {
+        (bytes32 _challenge, uint256 _expiresAt) = authManager.generateAuthChallenge(did, networkId);
+
+//        emit AuthChallengeGenerated(did, networkId, _challenge, _expiresAt);
+
+        return (_challenge, _expiresAt);
+    }
+
+    /**
+     * @dev 获取设备的最新认证挑战
+     */
+    function getLatestChallenge(bytes32 did) external view returns (bytes32 challenge, uint256 timestamp) {
+        return authManager.getLatestChallenge(did);
     }
 
     /**
      * @dev 验证设备并发放访问令牌
      */
     function authenticate(bytes32 did, bytes32 networkId, bytes32 challenge, bytes calldata signature)
-        external returns (bytes32 tokenId) {
+    external returns (bytes32 tokenId) {
         return authManager.authenticate(did, networkId, challenge, signature);
     }
 
@@ -288,11 +300,11 @@ contract BlockchainAuthMain is BaseStructures {
      * @dev 分页获取设备的认证日志
      */
     function getAuthLogs(bytes32 did, uint256 offset, uint256 limit)
-        external view returns (
-            address[] memory verifiers,
-            uint256[] memory timestamps,
-            bool[] memory successes
-        ) {
+    external view returns (
+        address[] memory verifiers,
+        uint256[] memory timestamps,
+        bool[] memory successes
+    ) {
         return authManager.getAuthLogs(did, offset, limit);
     }
 }

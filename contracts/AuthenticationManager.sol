@@ -19,6 +19,7 @@ contract AuthenticationManager is BaseStructures, CryptoUtils {
     mapping(bytes32 => AuthLog[]) internal authLogs;         // DID => 认证日志
     mapping(bytes32 => bool) internal usedChallenges;        // 已使用的挑战值 => 是否已使用
     mapping(bytes32 => uint256) internal challengeTimestamps; // 挑战值 => 创建时间戳
+    mapping(bytes32 => bytes32) public latestChallenges; // DID => 最新挑战
 
     // 设备管理和网络管理合约实例
     DeviceManagement internal deviceManager;
@@ -57,7 +58,7 @@ contract AuthenticationManager is BaseStructures, CryptoUtils {
      * @return expiresAt 挑战过期时间
      */
     function generateAuthChallenge(bytes32 did, bytes32 networkId)
-        external returns (bytes32 challenge, uint256 expiresAt) {
+    external returns (bytes32 challenge, uint256 expiresAt) {
         // 生成随机挑战
         challenge = keccak256(abi.encodePacked(
             did,
@@ -66,14 +67,21 @@ contract AuthenticationManager is BaseStructures, CryptoUtils {
             blockhash(block.number - 1)
         ));
 
-        // 记录挑战创建时间
+        // 记录挑战创建时间和最新挑战
         challengeTimestamps[challenge] = block.timestamp;
+        latestChallenges[did] = challenge;  // 存储此DID的最新挑战
         expiresAt = block.timestamp + AUTH_CHALLENGE_EXPIRY;
 
         // 触发事件
         emit AuthChallengeGenerated(did, networkId, challenge, expiresAt);
 
         return (challenge, expiresAt);
+    }
+
+    function getLatestChallenge(bytes32 did) external view returns (bytes32, uint256) {
+        bytes32 challenge = latestChallenges[did];
+        uint256 timestamp = challengeTimestamps[challenge];
+        return (challenge, timestamp);
     }
 
     /**
@@ -85,7 +93,7 @@ contract AuthenticationManager is BaseStructures, CryptoUtils {
      * @return tokenId 访问令牌ID
      */
     function authenticate(bytes32 did, bytes32 networkId, bytes32 challenge, bytes calldata signature)
-        external returns (bytes32 tokenId) {
+    external returns (bytes32 tokenId) {
         // 防重放攻击检查
         require(!usedChallenges[challenge], "Challenge already used");
         require(challengeTimestamps[challenge] > 0, "Unknown challenge");
@@ -303,11 +311,11 @@ contract AuthenticationManager is BaseStructures, CryptoUtils {
      * @return successes 认证结果数组
      */
     function getAuthLogs(bytes32 did, uint256 offset, uint256 limit)
-        external view returns (
-            address[] memory verifiers,
-            uint256[] memory timestamps,
-            bool[] memory successes
-        ) {
+    external view returns (
+        address[] memory verifiers,
+        uint256[] memory timestamps,
+        bool[] memory successes
+    ) {
         uint256 logCount = authLogs[did].length;
 
         if (offset >= logCount) {
@@ -344,7 +352,7 @@ contract AuthenticationManager is BaseStructures, CryptoUtils {
      * @return cleanedCount 已清理的挑战数量
      */
     function cleanupExpiredChallenges(bytes32[] calldata challenges, uint256 batchSize)
-        external returns (uint256 cleanedCount) {
+    external returns (uint256 cleanedCount) {
         uint256 count = challenges.length < batchSize ? challenges.length : batchSize;
         cleanedCount = 0;
 

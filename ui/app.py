@@ -14,7 +14,7 @@ from main_ui import MainWindow
 
 # 导入区块链客户端（如果可用）
 try:
-    from python.test_identity import IdentityChainClient
+    from python.test_blockchain import BlockChainClient
 
     BLOCKCHAIN_CLIENT_AVAILABLE = True
 except ImportError:
@@ -72,7 +72,7 @@ def start_main_application(user_address, user_role):
     client = None
     if BLOCKCHAIN_CLIENT_AVAILABLE:
         try:
-            client = IdentityChainClient(network="localhost")
+            client = BlockChainClient(network="localhost")
         except Exception as e:
             print(f"连接区块链失败: {str(e)}")
 

@@ -24,7 +24,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-class IdentityChainClient:
+class BlockChainClient:
     """与Blockchain_Auth智能合约的Python接口"""
 
     def __init__(self, network="localhost", contract_address=None):
@@ -364,8 +364,13 @@ class IdentityChainClient:
             return ""
 
     def generate_auth_challenge(self, did_bytes32: str, network_id_bytes32: str) -> Dict:
-        """生成认证挑战，防止重放攻击"""
         try:
+            # 调用合约方法并直接获取返回值
+            challenge, expires_at = self.contract.functions.generateAuthChallenge(
+                self.w3.to_bytes(hexstr=did_bytes32),
+                self.w3.to_bytes(hexstr=network_id_bytes32)
+            ).call({'from': self.account.address})
+
             # 构建交易
             tx = self.contract.functions.generateAuthChallenge(
                 self.w3.to_bytes(hexstr=did_bytes32),
@@ -386,19 +391,10 @@ class IdentityChainClient:
             # 等待交易确认
             tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
 
-            # 从事件日志中获取挑战值
-            challenge = None
-            expires_at = None
-            if tx_receipt.status == 1:
-                logs = self.contract.events.AuthChallengeGenerated().process_receipt(tx_receipt)
-                if logs:
-                    challenge = self.w3.to_hex(logs[0]['args']['challenge'])
-                    expires_at = logs[0]['args']['expiresAt']
-
             return {
                 'success': tx_receipt.status == 1,
                 'tx_hash': self.w3.to_hex(tx_hash),
-                'challenge': challenge,
+                'challenge': self.w3.to_hex(challenge),
                 'expires_at': expires_at
             }
         except Exception as e:
