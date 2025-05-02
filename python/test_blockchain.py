@@ -455,15 +455,15 @@ class BlockChainClient:
                 signature_bytes = bytes.fromhex(signature)
 
             # 估计需要的gas
-            gas_estimate = self.contract.functions.authenticate(
-                did_bytes32_bytes,
-                network_id_bytes32_bytes,
-                challenge_bytes32,
-                signature_bytes
-            ).estimate_gas({'from': self.account.address})
-
-            gas_with_buffer = int(gas_estimate * 2)  # 添加50%的缓冲
-
+            # gas_estimate = self.contract.functions.authenticate(
+            #     did_bytes32_bytes,
+            #     network_id_bytes32_bytes,
+            #     challenge_bytes32,
+            #     signature_bytes
+            # ).estimate_gas({'from': self.account.address})
+            #
+            # gas_with_buffer = int(gas_estimate * 2)  # 添加50%的缓冲
+            gas_with_buffer = 3000000
             # 构建交易
             tx = self.contract.functions.authenticate(
                 did_bytes32_bytes,
@@ -489,9 +489,14 @@ class BlockChainClient:
             # 解析事件日志以获取令牌ID
             token_id = None
             if tx_receipt.status == 1:
-                logs = self.contract.events.TokenIssued().process_receipt(tx_receipt)
-                if logs:
-                    token_id = self.w3.to_hex(logs[0]['args']['tokenId'])
+                try:
+                    logs = self.contract.events.TokenIssued().process_receipt(tx_receipt)
+                    if logs:
+                        token_id = self.w3.to_hex(logs[0]['args']['tokenId'])
+                except Exception as e:
+                    print(f"无法处理 TokenIssued 事件: {str(e)}")
+                    # 如果出错，仍然返回成功，但没有令牌ID
+                    pass
 
             return {
                 'success': tx_receipt.status == 1,

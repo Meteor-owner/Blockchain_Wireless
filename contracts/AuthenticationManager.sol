@@ -68,9 +68,12 @@ contract AuthenticationManager is BaseStructures, CryptoUtils {
         ));
 
         // 记录挑战创建时间和最新挑战
-        challengeTimestamps[challenge] = block.timestamp + AUTH_CHALLENGE_EXPIRY;
-        latestChallenges[did] = challenge;  // 存储此DID的最新挑战
+//        challengeTimestamps[challenge] = block.timestamp + AUTH_CHALLENGE_EXPIRY;
+//        latestChallenges[did] = challenge;  // 存储此DID的最新挑战
+//        expiresAt = block.timestamp + AUTH_CHALLENGE_EXPIRY;
         expiresAt = block.timestamp + AUTH_CHALLENGE_EXPIRY;
+        challengeTimestamps[challenge] = expiresAt;
+        latestChallenges[did] = challenge;
 
         // 触发事件
         emit AuthChallengeGenerated(did, networkId, challenge, expiresAt);
@@ -97,8 +100,9 @@ contract AuthenticationManager is BaseStructures, CryptoUtils {
         // 防重放攻击检查
         require(!usedChallenges[challenge], "Challenge already used");
         require(challengeTimestamps[challenge] > 0, "Unknown challenge");
+
         require(
-            block.timestamp - challengeTimestamps[challenge] <= AUTH_CHALLENGE_EXPIRY,
+            block.timestamp <= challengeTimestamps[challenge],
             "Challenge expired"
         );
 

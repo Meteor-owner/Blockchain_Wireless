@@ -195,7 +195,7 @@ def run_demo():
 
         # 生成挑战
         challenge_result = client.generate_auth_challenge(device['did_bytes32'], network_id_bytes32)
-        print(f"挑战生成结果: {challenge_result}")
+        # print(f"挑战生成结果: {challenge_result}")
         time.sleep(3)
 
         if challenge_result['success']:
@@ -210,7 +210,7 @@ def run_demo():
 
             # 验证设备并获取令牌
             auth_result = client.authenticate(device['did_bytes32'], network_id_bytes32, challenge, signature)
-            print(f"认证结果: {auth_result}")
+            # print(f"认证结果: {auth_result}")
 
             if auth_result['success']:
                 token_id = auth_result['token_id']
@@ -229,7 +229,7 @@ def run_demo():
         else:
             print_error(f"生成挑战失败")
             print_info(f"错误: {challenge_result.get('error', '未知错误')}")
-def demo2():
+# def demo2():
     # 步骤5: 更新设备信息
     print_section("步骤5: 更新设备信息")
     if len(devices) > 0:

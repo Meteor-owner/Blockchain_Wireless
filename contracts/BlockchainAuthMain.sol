@@ -28,6 +28,8 @@ contract BlockchainAuthMain is BaseStructures {
     string public name = "Blockchain Auth System";
 
     event AuthChallengeGenerated(bytes32 indexed did, bytes32 indexed networkId, bytes32 challenge, uint256 expiresAt);
+    event TokenIssued(bytes32 indexed did, bytes32 indexed tokenId, uint256 expiresAt);
+
     /**
      * @dev 构造函数，部署并初始化所有子合约
      */
@@ -260,7 +262,10 @@ contract BlockchainAuthMain is BaseStructures {
      */
     function authenticate(bytes32 did, bytes32 networkId, bytes32 challenge, bytes calldata signature)
     external returns (bytes32 tokenId) {
-        return authManager.authenticate(did, networkId, challenge, signature);
+        bytes32 tokenId=authManager.authenticate(did, networkId, challenge, signature);
+        uint256 expiresAt = block.timestamp + 1 days;
+        emit TokenIssued(did, tokenId, expiresAt);
+        return tokenId;
     }
 
     /**
