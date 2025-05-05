@@ -97,7 +97,7 @@ npx hardhat node
 ## Deploying Contracts
 
 ```bash
-npx hardhat run scripts/deploy.js --network localhost
+`11`
 ```
 
 ## Running the Demo

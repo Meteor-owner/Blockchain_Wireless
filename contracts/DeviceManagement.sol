@@ -162,7 +162,7 @@ contract DeviceManagement is BaseStructures, CryptoUtils {
             name: name,
             metadata: metadata,
             authorizedBy: authorizedBy,
-            userAddress: msg.sender  // 默认设置为消息发送者
+            userAddress: msg.sender
         });
 
         // 更新索引

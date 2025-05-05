@@ -98,6 +98,18 @@ class BlockChainClient:
                 address=self.contract_address,
                 abi=self.contract_abi
             )
+            self.user_manager_address = self.contract.functions.userManager().call()
+            user_manager_abi_file = f"./artifacts/contracts/UserManagement.sol/UserManagement.json"
+            if os.path.exists(user_manager_abi_file):
+                with open(user_manager_abi_file, 'r') as f:
+                    contract_json = json.load(f)
+                    self.user_manager_abi = contract_json['abi']
+
+                # 实例化用户管理合约
+                self.user_manager_contract = self.w3.eth.contract(
+                    address=self.user_manager_address,
+                    abi=self.user_manager_abi
+                )
             print(f"成功实例化合约: {self.contract_address}")
         except Exception as e:
             raise ValueError(f"实例化合约失败: {str(e)}")
@@ -791,7 +803,7 @@ class BlockChainClient:
             }
 
     # 用户管理相关功能
-    def register_user(self, name: str, email: str) -> Dict:
+    def register_user(self, name: str, email: str, public_key: str = None) -> Dict:
         """注册新用户
 
         Args:
@@ -802,16 +814,32 @@ class BlockChainClient:
             Dict: 包含操作结果的字典
         """
         try:
+            if public_key:
+                # 如果提供的是十六进制字符串，转换为字节
+                if isinstance(public_key, str):
+                    if public_key.startswith('0x'):
+                        public_key_bytes = bytes.fromhex(public_key[2:])
+                    else:
+                        public_key_bytes = bytes.fromhex(public_key)
+                else:
+                    # 如果已经是字节类型，直接使用
+                    public_key_bytes = public_key
+            else:
+                # 如果未提供公钥，创建一个简单的演示公钥
+                public_key_bytes = b'demo_public_key_' + os.urandom(32)
+
+            print(f"注册用户，参数：name={name}, email={email}, public_key长度={len(public_key_bytes)}字节")
+
             # 构建交易
             tx = self.contract.functions.registerUser(
                 name,
                 email,
-                b'',  # 如果是普通用户注册，不需要提供公钥
+                public_key_bytes,  # 如果是普通用户注册，不需要提供公钥
                 b''  # 如果是普通用户注册，不需要提供签名
             ).build_transaction({
                 'from': self.account.address,
                 'nonce': self.w3.eth.get_transaction_count(self.account.address),
-                'gas': 300000,
+                'gas': 500000,
                 'gasPrice': self.w3.eth.gas_price
             })
 
@@ -823,6 +851,15 @@ class BlockChainClient:
 
             # 等待交易确认
             tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
+
+            try:
+                logs = self.user_manager_contract.events.UserRegistered.process_receipt(tx_receipt)
+                if logs:
+                    print(f"检测到UserRegistered事件: {logs}")
+                else:
+                    print("没有检测到UserRegistered事件")
+            except Exception as e:
+                print(f"处理事件时出错: {str(e)}")
 
             return {
                 'success': tx_receipt.status == 1,
@@ -916,15 +953,7 @@ class BlockChainClient:
                 'traceback': traceback.format_exc()
             }
 
-    def get_user_info(self, user_address=None) -> Dict:
-        """获取用户信息
-
-        Args:
-            user_address: 用户地址，默认为当前账户
-
-        Returns:
-            Dict: 包含用户信息的字典
-        """
+    def get_user_info(self, user_address=None):
         try:
             if user_address is None:
                 user_address = self.account.address
@@ -933,6 +962,9 @@ class BlockChainClient:
             user_info = self.contract.functions.getUserInfo(
                 user_address
             ).call({'from': self.account.address})
+
+            # 检查返回值，可以添加打印来调试
+            print(f"调试：原始合约返回：{user_info}")
 
             return {
                 'success': True,
@@ -947,6 +979,8 @@ class BlockChainClient:
                 'authorized_by': user_info[8]
             }
         except Exception as e:
+            print(f"获取用户信息时出错: {str(e)}")
+            traceback.print_exc()  # 打印完整错误堆栈
             return {
                 'success': False,
                 'error': str(e),

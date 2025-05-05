@@ -12,7 +12,7 @@ contract BaseStructures {
 
     // 用户角色类型
     enum UserRole {
-        NONE,           // 未注册
+        NONE,           // 未注册pip
         USER,           // 普通用户
         NETWORK_ADMIN,  // 网络管理员
         SYSTEM_ADMIN    // 系统管理员

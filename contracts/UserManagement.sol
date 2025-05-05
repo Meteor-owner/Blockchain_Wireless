@@ -394,6 +394,10 @@ contract UserManagement is BaseStructures, CryptoUtils {
 
             authorizer = recoverSigner(ethSignedMessageHash, signature);
 
+            if (!registeredUsers[authorizer]) {
+                return (false, "Signature must be from a registered user");
+            }
+
             // 验证授权者是管理员
             if (users[authorizer].role != UserRole.SYSTEM_ADMIN &&
                 users[authorizer].role != UserRole.NETWORK_ADMIN) {

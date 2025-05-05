@@ -80,6 +80,21 @@ def run_demo():
     print_section("步骤0: 注册用户")
     user_check = client.is_registered_user()
 
+    user_count_result = client.get_user_count()
+    if user_count_result['success']:
+        print_success(f"系统中共有 {user_count_result['count']} 个用户")
+
+        # 获取用户列表
+        if user_count_result['count'] > 0:
+            users_result = client.get_user_list(0, min(5, user_count_result['count']))
+            if users_result['success']:
+                print_success(f"用户列表前 {len(users_result['addresses'])} 个:")
+                for i in range(len(users_result['addresses'])):
+                    role_text = "系统管理员" if users_result['roles'][i] == 2 else "网络管理员" if \
+                        users_result['roles'][i] == 1 else "普通用户"
+                    print(
+                        f"  [{i + 1}] {users_result['names'][i]} - {role_text} - {'活跃' if users_result['is_actives'][i] else '已停用'}")
+
     if user_check['success'] and user_check['is_registered']:
         print_success("当前账户已注册为用户")
         # 获取用户信息
@@ -90,17 +105,50 @@ def run_demo():
             print_info(f"角色: {user_info['role']}")
     else:
         print_info("当前账户未注册，正在注册新用户...")
+        user_keys = client.generate_keys()
         user_name = "Demo User"
         user_email = "demo@example.com"
-        register_result = client.register_user(user_name, user_email)
+        register_result = client.register_user(user_name, user_email, user_keys['public_key'])
 
         if register_result['success']:
             print_success(f"用户注册成功: {user_name}")
+            # 添加等待时间
+            print_info("等待交易确认...")
+            time.sleep(5)  # 等待5秒，确保交易被确认
+
+            # 再次检查用户注册状态
+            user_check = client.is_registered_user()
+            if user_check['success'] and user_check['is_registered']:
+                print_success("确认用户已成功注册")
+                user_info = client.get_user_info()
+                if user_info['success']:
+                    print_info(f"用户名: {user_info['name']}")
+                    print_info(f"电子邮箱: {user_info['email']}")
+                    print_info(f"角色: {user_info['role']}")
+                else:
+                    print_error(f"获取用户信息失败: {user_info.get('error', '未知错误')}")
+            else:
+                print_error("用户注册状态验证失败")
         else:
             print_error(f"用户注册失败: {register_result.get('error', '未知错误')}")
             if 'traceback' in register_result:
                 print(f"异常堆栈:\n{register_result['traceback']}")
             return
+    time.sleep(3)
+
+    user_count_result = client.get_user_count()
+    if user_count_result['success']:
+        print_success(f"系统中共有 {user_count_result['count']} 个用户")
+
+        # 获取用户列表
+        if user_count_result['count'] > 0:
+            users_result = client.get_user_list(0, min(5, user_count_result['count']))
+            if users_result['success']:
+                print_success(f"用户列表前 {len(users_result['addresses'])} 个:")
+                for i in range(len(users_result['addresses'])):
+                    role_text = "系统管理员" if users_result['roles'][i] == 2 else "网络管理员" if \
+                    users_result['roles'][i] == 1 else "普通用户"
+                    print(f"  [{i + 1}] {users_result['names'][i]} - {role_text} - {'活跃' if users_result['is_actives'][i] else '已停用'}")
 
     # 步骤1: 创建网络
     print_section("步骤1: 创建无线网络")
