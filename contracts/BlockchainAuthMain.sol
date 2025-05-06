@@ -39,7 +39,7 @@ contract BlockchainAuthMain is BaseStructures {
         deploymentTimestamp = block.timestamp;
 
         // 部署子合约
-        userManager = new UserManagement();
+        userManager = new UserManagement(systemAdmin);
         deviceManager = new DeviceManagement(address(userManager));
         networkManager = new NetworkManagement(address(userManager));
         authManager = new AuthenticationManager(

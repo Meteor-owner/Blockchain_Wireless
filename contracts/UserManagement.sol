@@ -88,12 +88,12 @@ contract UserManagement is BaseStructures, CryptoUtils {
     /**
      * @dev 构造函数，设置系统管理员
      */
-    constructor() {
-        systemAdmin = msg.sender;
-        registeredUsers[msg.sender] = true;
+    constructor(address _admin) {
+        systemAdmin = _admin;
+        registeredUsers[_admin] = true;
 
         // 注册系统管理员为第一个用户
-        _registerUser(msg.sender, "System Admin", "", new bytes(0), UserRole.SYSTEM_ADMIN, address(0));
+        _registerUser(_admin, "System Admin", "admin@admin.com", new bytes(0), UserRole.SYSTEM_ADMIN, address(0));
     }
 
     // =================================

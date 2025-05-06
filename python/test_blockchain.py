@@ -15,6 +15,7 @@ import binascii
 import traceback
 from typing import Dict, List, Tuple, Any
 from web3 import Web3
+from web3.logs import DISCARD, WARN, STRICT
 from web3.middleware import geth_poa_middleware
 from eth_account import Account
 from eth_account.messages import encode_defunct
@@ -853,7 +854,7 @@ class BlockChainClient:
             tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
 
             try:
-                logs = self.user_manager_contract.events.UserRegistered.process_receipt(tx_receipt)
+                logs = self.user_manager_contract.events.UserRegistered.process_receipt(tx_receipt,error=web3.logs.DISCARD)
                 if logs:
                     print(f"检测到UserRegistered事件: {logs}")
                 else:

@@ -10,11 +10,13 @@ import time
 import uuid
 from python.test_blockchain import BlockChainClient
 
+
 def print_header(text):
     """打印格式化的标题"""
     print("\n" + "=" * 80)
     print(f"  {text}")
     print("=" * 80)
+
 
 def print_section(text):
     """打印格式化的章节标题"""
@@ -22,17 +24,21 @@ def print_section(text):
     print(f"  {text}")
     print("-" * 60)
 
+
 def print_success(text):
     """打印成功信息"""
     print(f"✅ {text}")
+
 
 def print_error(text):
     """打印错误信息"""
     print(f"❌ {text}")
 
+
 def print_info(text):
     """打印信息"""
     print(f"ℹ️ {text}")
+
 
 def check_environment():
     """检查环境设置"""
@@ -53,6 +59,7 @@ def check_environment():
 
     print_success("环境检查通过")
     return True
+
 
 def run_demo():
     """运行完整的演示流程"""
@@ -90,8 +97,8 @@ def run_demo():
             if users_result['success']:
                 print_success(f"用户列表前 {len(users_result['addresses'])} 个:")
                 for i in range(len(users_result['addresses'])):
-                    role_text = "系统管理员" if users_result['roles'][i] == 2 else "网络管理员" if \
-                        users_result['roles'][i] == 1 else "普通用户"
+                    role_text = "系统管理员" if users_result['roles'][i] == 3 else "网络管理员" if \
+                        users_result['roles'][i] == 2 else "普通用户"
                     print(
                         f"  [{i + 1}] {users_result['names'][i]} - {role_text} - {'活跃' if users_result['is_actives'][i] else '已停用'}")
 
@@ -102,38 +109,43 @@ def run_demo():
         if user_info['success']:
             print_info(f"用户名: {user_info['name']}")
             print_info(f"电子邮箱: {user_info['email']}")
-            print_info(f"角色: {user_info['role']}")
+            role_text = "系统管理员" if user_info['role'] == 3 else "网络管理员" if \
+                user_info['role'] == 2 else "普通用户"
+            print_info(f"角色: {role_text}")
     else:
-        print_info("当前账户未注册，正在注册新用户...")
-        user_keys = client.generate_keys()
-        user_name = "Demo User"
-        user_email = "demo@example.com"
-        register_result = client.register_user(user_name, user_email, user_keys['public_key'])
+        pass
 
-        if register_result['success']:
-            print_success(f"用户注册成功: {user_name}")
-            # 添加等待时间
-            print_info("等待交易确认...")
-            time.sleep(5)  # 等待5秒，确保交易被确认
+    print_info("开始注册新用户...")
+    user_keys = client.generate_keys()
+    user_name = "Demo User"
+    user_email = "demo@example.com"
+    register_result = client.register_user(user_name, user_email, user_keys['public_key'])
 
-            # 再次检查用户注册状态
-            user_check = client.is_registered_user()
-            if user_check['success'] and user_check['is_registered']:
-                print_success("确认用户已成功注册")
-                user_info = client.get_user_info()
-                if user_info['success']:
-                    print_info(f"用户名: {user_info['name']}")
-                    print_info(f"电子邮箱: {user_info['email']}")
-                    print_info(f"角色: {user_info['role']}")
-                else:
-                    print_error(f"获取用户信息失败: {user_info.get('error', '未知错误')}")
+    if register_result['success']:
+        print_success(f"用户注册成功: {user_name}")
+        # 添加等待时间
+        print_info("等待交易确认...")
+        time.sleep(5)  # 等待5秒，确保交易被确认
+
+        # 再次检查用户注册状态
+        user_check = client.is_registered_user()
+        if user_check['success'] and user_check['is_registered']:
+            print_success("确认用户已成功注册")
+            user_info = client.get_user_info()
+            if user_info['success']:
+                print_info(f"用户名: {user_info['name']}")
+                print_info(f"电子邮箱: {user_info['email']}")
+                print_info(f"角色: {user_info['role']}")
             else:
-                print_error("用户注册状态验证失败")
+                print_error(f"获取用户信息失败: {user_info.get('error', '未知错误')}")
         else:
-            print_error(f"用户注册失败: {register_result.get('error', '未知错误')}")
-            if 'traceback' in register_result:
-                print(f"异常堆栈:\n{register_result['traceback']}")
-            return
+            print_error("用户注册状态验证失败")
+    else:
+        print_error(f"用户注册失败: {register_result.get('error', '未知错误')}")
+        if 'traceback' in register_result:
+            print(f"异常堆栈:\n{register_result['traceback']}")
+        return
+
     time.sleep(3)
 
     user_count_result = client.get_user_count()
@@ -146,9 +158,10 @@ def run_demo():
             if users_result['success']:
                 print_success(f"用户列表前 {len(users_result['addresses'])} 个:")
                 for i in range(len(users_result['addresses'])):
-                    role_text = "系统管理员" if users_result['roles'][i] == 2 else "网络管理员" if \
-                    users_result['roles'][i] == 1 else "普通用户"
-                    print(f"  [{i + 1}] {users_result['names'][i]} - {role_text} - {'活跃' if users_result['is_actives'][i] else '已停用'}")
+                    role_text = "系统管理员" if users_result['roles'][i] == 3 else "网络管理员" if \
+                        users_result['roles'][i] == 2 else "普通用户"
+                    print(
+                        f"  [{i + 1}] {users_result['names'][i]} - {role_text} - {'活跃' if users_result['is_actives'][i] else '已停用'}")
 
     # 步骤1: 创建网络
     print_section("步骤1: 创建无线网络")
@@ -206,7 +219,8 @@ def run_demo():
                 print_info(f"设备所有者: {device_info['owner']}")
                 print_info(f"设备类型: {device_info['device_type']}")
                 print_info(f"设备名称: {device_info['name']}")
-                print_info(f"注册时间: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(device_info['registered_at']))}")
+                print_info(
+                    f"注册时间: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(device_info['registered_at']))}")
 
             devices.append({
                 'name': name,
@@ -277,7 +291,7 @@ def run_demo():
         else:
             print_error(f"生成挑战失败")
             print_info(f"错误: {challenge_result.get('error', '未知错误')}")
-# def demo2():
+    # def demo2():
     # 步骤5: 更新设备信息
     print_section("步骤5: 更新设备信息")
     if len(devices) > 0:
@@ -388,7 +402,7 @@ def run_demo():
 
             for idx, log in enumerate(logs_result['logs']):
                 log_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(log['timestamp']))
-                print(f"  [{idx+1}] 时间: {log_time}")
+                print(f"  [{idx + 1}] 时间: {log_time}")
                 print(f"      验证者: {log['verifier']}")
                 print(f"      结果: {'成功' if log['success'] else '失败'}")
         else:
@@ -494,7 +508,7 @@ def run_demo():
         if devices_result['success']:
             print_success(f"当前账户拥有 {devices_result['device_count']} 个设备")
             for i, did in enumerate(devices_result['devices']):
-                print(f"  [{i+1}] 设备ID: {did}")
+                print(f"  [{i + 1}] 设备ID: {did}")
         else:
             print_error(f"获取设备列表失败")
             print_info(f"错误: {devices_result.get('error', '未知错误')}")
@@ -504,7 +518,7 @@ def run_demo():
         if networks_result['success']:
             print_success(f"当前账户拥有 {networks_result['network_count']} 个网络")
             for i, nid in enumerate(networks_result['networks']):
-                print(f"  [{i+1}] 网络ID: {nid}")
+                print(f"  [{i + 1}] 网络ID: {nid}")
         else:
             print_error(f"获取网络列表失败")
             print_info(f"错误: {networks_result.get('error', '未知错误')}")
@@ -527,8 +541,10 @@ def run_demo():
                 if users_result['success']:
                     print_success(f"用户列表前 {len(users_result['addresses'])} 个:")
                     for i in range(len(users_result['addresses'])):
-                        role_text = "系统管理员" if users_result['roles'][i] == 2 else "网络管理员" if users_result['roles'][i] == 1 else "普通用户"
-                        print(f"  [{i+1}] {users_result['names'][i]} - {role_text} - {'活跃' if users_result['is_actives'][i] else '已停用'}")
+                        role_text = "系统管理员" if users_result['roles'][i] == 2 else "网络管理员" if \
+                        users_result['roles'][i] == 1 else "普通用户"
+                        print(
+                            f"  [{i + 1}] {users_result['names'][i]} - {role_text} - {'活跃' if users_result['is_actives'][i] else '已停用'}")
                 else:
                     print_error(f"获取用户列表失败")
                     print_info(f"错误: {users_result.get('error', '未知错误')}")
@@ -573,11 +589,12 @@ def run_demo():
             print_info(f"错误: {original_info.get('error', '未知错误')}")
     except Exception as e:
         print_error(f"用户信息更新演示时出错: {str(e)}")
-    
+
     print_header("演示完成!")
     print_info("区块链无线网络身份验证系统已成功演示")
     print_info("此演示展示了使用区块链技术实现无线网络身份验证的基本流程")
     print_info("包括设备注册、认证、令牌管理和访问控制等功能")
+
 
 if __name__ == "__main__":
     run_demo()
