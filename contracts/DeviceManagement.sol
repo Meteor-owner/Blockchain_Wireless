@@ -49,8 +49,8 @@ contract DeviceManagement is BaseStructures, CryptoUtils {
     /**
      * @dev 只允许已注册且活跃的用户调用
      */
-    modifier onlyActiveUser() {
-        require(userManager.isRegisteredUser(msg.sender), "Requires registered user");
+    modifier onlyActiveUser(address sender) {
+        require(userManager.isRegisteredUser(sender), "Requires registered user");
         _;
     }
 
@@ -84,8 +84,9 @@ contract DeviceManagement is BaseStructures, CryptoUtils {
         bytes calldata publicKey,
         string calldata name,
         bytes32 metadata,
-        bytes calldata signature
-    ) external onlyActiveUser returns (bool success, string memory message) {
+        bytes calldata signature,
+        address sender
+    ) external onlyActiveUser (sender) returns (bool success, string memory message) {
         if (devices[did].owner != address(0)) {
             return (false, "Device already registered");
         }

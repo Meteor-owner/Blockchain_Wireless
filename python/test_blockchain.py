@@ -99,19 +99,31 @@ class BlockChainClient:
                 address=self.contract_address,
                 abi=self.contract_abi
             )
+            # 获取UserManagement合约地址
             self.user_manager_address = self.contract.functions.userManager().call()
-            user_manager_abi_file = f"./artifacts/contracts/UserManagement.sol/UserManagement.json"
+
+            # 加载UserManagement合约ABI
+            user_manager_abi_file = "./artifacts/contracts/UserManagement.sol/UserManagement.json"
             if os.path.exists(user_manager_abi_file):
                 with open(user_manager_abi_file, 'r') as f:
                     contract_json = json.load(f)
                     self.user_manager_abi = contract_json['abi']
 
-                # 实例化用户管理合约
+                # 实例化UserManagement合约
                 self.user_manager_contract = self.w3.eth.contract(
                     address=self.user_manager_address,
                     abi=self.user_manager_abi
                 )
-            print(f"成功实例化合约: {self.contract_address}")
+
+                # 查询UserManagement合约中的系统管理员地址
+                user_manager_admin = self.user_manager_contract.functions.systemAdmin().call()
+                print(f"UserManagement中的系统管理员地址: {user_manager_admin}")
+                print(f"当前账户地址: {self.account.address}")
+                print(f"是否为UserManagement中的系统管理员: {user_manager_admin.lower() == self.account.address.lower()}")
+
+            print(f"成功实例化主合约: {self.contract_address}")
+            print(f"成功实例化UserManagement合约: {self.user_manager_address}")
+
         except Exception as e:
             raise ValueError(f"实例化合约失败: {str(e)}")
 
@@ -830,7 +842,9 @@ class BlockChainClient:
                 public_key_bytes = b'demo_public_key_' + os.urandom(32)
 
             print(f"注册用户，参数：name={name}, email={email}, public_key长度={len(public_key_bytes)}字节")
-
+            system_admin = self.contract.functions.systemAdmin().call()
+            print(f"系统管理员地址: {system_admin}")
+            print(f"当前账户地址: {self.account.address}")
             # 构建交易
             tx = self.contract.functions.registerUser(
                 name,
@@ -854,7 +868,7 @@ class BlockChainClient:
             tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
 
             try:
-                logs = self.user_manager_contract.events.UserRegistered.process_receipt(tx_receipt,error=web3.logs.DISCARD)
+                logs = self.user_manager_contract.events.UserRegistered.process_receipt(tx_receipt)
                 if logs:
                     print(f"检测到UserRegistered事件: {logs}")
                 else:

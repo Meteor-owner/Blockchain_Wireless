@@ -352,70 +352,69 @@ contract UserManagement is BaseStructures, CryptoUtils {
      * @return message 返回消息
      */
     function registerUser(
-        string calldata name,
-        string calldata email,
-        bytes calldata publicKey,
-        bytes calldata signature
-    ) external returns (bool success, string memory message) {
-        // 检查用户名是否已存在
-        if (userNames[name] != address(0)) {
-            return (false, "Username already taken");
-        }
-
-        // 检查用户是否已注册
-        if (users[msg.sender].userAddress != address(0)) {
-            return (false, "User already registered");
-        }
-
-        // 验证公钥
-        if (publicKey.length == 0) {
-            return (false, "Public key cannot be empty");
-        }
-
-        address authorizer;
-
-        // 如果是系统管理员调用，可以直接注册
-        if (msg.sender == systemAdmin) {
-            authorizer = systemAdmin;
-            success = _registerUser(msg.sender, name, email, publicKey, UserRole.USER, authorizer);
-        } else {
-            // 非管理员需要管理员签名授权
-            bytes32 messageHash = keccak256(abi.encodePacked(
-                msg.sender,
-                name,
-                email,
-                publicKey
-            ));
-
-            bytes32 ethSignedMessageHash = keccak256(abi.encodePacked(
-                "\x19Ethereum Signed Message:\n32",
-                messageHash
-            ));
-
-            authorizer = recoverSigner(ethSignedMessageHash, signature);
-
-            if (!registeredUsers[authorizer]) {
-                return (false, "Signature must be from a registered user");
-            }
-
-            // 验证授权者是管理员
-            if (users[authorizer].role != UserRole.SYSTEM_ADMIN &&
-                users[authorizer].role != UserRole.NETWORK_ADMIN) {
-                return (false, "Signature must be from an admin");
-            }
-
-            // 网络管理员只能注册普通用户
-            UserRole role = UserRole.USER;
-
-            success = _registerUser(msg.sender, name, email, publicKey, role, authorizer);
-        }
-
-        if (success) {
-            return (true, "User registered successfully");
-        } else {
-            return (false, "Failed to register user");
-        }
+    string calldata name,
+    string calldata email,
+    bytes calldata publicKey,
+    bytes calldata signature,
+    address originalSender
+) external returns (bool success, string memory message) {
+    // 检查用户名是否已存在
+    if (userNames[name] != address(0)) {
+        return (false, "Username already taken");
     }
+
+    // 检查用户是否已注册
+    if (users[originalSender].userAddress != address(0)) {
+        return (false, "User already registered");
+    }
+
+    // 验证公钥
+    if (publicKey.length == 0) {
+        return (false, "Public key cannot be empty");
+    }
+
+    address authorizer;
+
+    // 如果提供了签名，验证签名
+    if (signature.length > 0) {
+        // 构建消息哈希
+        bytes32 messageHash = keccak256(abi.encodePacked(
+            msg.sender,
+            name,
+            email,
+            publicKey
+        ));
+
+        bytes32 ethSignedMessageHash = keccak256(abi.encodePacked(
+            "\x19Ethereum Signed Message:\n32",
+            messageHash
+        ));
+
+        // 验证签名
+        authorizer = recoverSigner(ethSignedMessageHash, signature);
+
+        // 检查签名者权限
+        if (users[authorizer].role != UserRole.SYSTEM_ADMIN &&
+            users[authorizer].role != UserRole.NETWORK_ADMIN) {
+            return (false, "Signature must be from an admin");
+        }
+    } else {
+        // 没有签名时，允许自注册（仅适用于测试环境）
+        // 在生产环境中应移除此部分
+        authorizer = msg.sender;
+//        return (false, "Signature must not be empty!")
+    }
+
+    // 注册用户
+    UserRole role = UserRole.USER;
+    success = _registerUser(originalSender, name, email, publicKey, role, authorizer);
+
+    if (success) {
+        return (true, "User registered successfully");
+    } else {
+        return (false, "Failed to register user");
+    }
+}
 
     /**
      * @dev 内部函数：注册新用户

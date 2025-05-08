@@ -87,6 +87,7 @@ def run_demo():
     print_section("步骤0: 注册用户")
     user_check = client.is_registered_user()
 
+
     user_count_result = client.get_user_count()
     if user_count_result['success']:
         print_success(f"系统中共有 {user_count_result['count']} 个用户")
@@ -125,7 +126,7 @@ def run_demo():
         print_success(f"用户注册成功: {user_name}")
         # 添加等待时间
         print_info("等待交易确认...")
-        time.sleep(5)  # 等待5秒，确保交易被确认
+        time.sleep(5)
 
         # 再次检查用户注册状态
         user_check = client.is_registered_user()

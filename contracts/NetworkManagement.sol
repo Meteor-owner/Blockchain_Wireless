@@ -47,8 +47,8 @@ contract NetworkManagement is BaseStructures {
     /**
      * @dev 只允许已注册且活跃的用户调用
      */
-    modifier onlyActiveUser() {
-        require(userManager.isRegisteredUser(msg.sender), "Requires registered user");
+    modifier onlyActiveUser(address sender) {
+        require(userManager.isRegisteredUser(sender), "Requires registered user");
         _;
     }
 
@@ -87,23 +87,23 @@ contract NetworkManagement is BaseStructures {
      * @return success 是否成功
      * @return message 返回消息
      */
-    function createNetwork(bytes32 networkId, string calldata name)
-        external onlyActiveUser returns (bool success, string memory message) {
+    function createNetwork(address sender, bytes32 networkId, string calldata name)
+        external onlyActiveUser (sender) returns (bool success, string memory message) {
         if (networks[networkId].owner != address(0)) {
             return (false, "Network already exists");
         }
 
         networks[networkId] = Network({
-            owner: msg.sender,
+            owner: sender,
             networkId: networkId,
             name: name,
             createdAt: block.timestamp,
             isActive: true
         });
 
-        ownerNetworks[msg.sender].push(networkId);
+        ownerNetworks[sender].push(networkId);
 
-        emit NetworkCreated(networkId, msg.sender, name);
+        emit NetworkCreated(networkId, sender, name);
 
         return (true, "Network created successfully");
     }
@@ -115,10 +115,10 @@ contract NetworkManagement is BaseStructures {
      * @return success 是否成功
      * @return message 返回消息
      */
-    function grantAccess(bytes32 did, bytes32 networkId)
+    function grantAccess(bytes32 did, bytes32 networkId, address sender)
         external returns (bool success, string memory message) {
         // 验证权限：只有网络所有者可以授予访问权限
-        bool isAuthorized = networks[networkId].owner == msg.sender;
+        bool isAuthorized = networks[networkId].owner == sender;
 
         if (!isAuthorized) {
             return (false, "Not authorized to grant access");

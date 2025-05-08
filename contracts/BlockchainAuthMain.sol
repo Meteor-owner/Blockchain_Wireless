@@ -61,7 +61,7 @@ contract BlockchainAuthMain is BaseStructures {
         bytes calldata publicKey,
         bytes calldata signature
     ) external returns (bool success, string memory message) {
-        return userManager.registerUser(name, email, publicKey, signature);
+        return userManager.registerUser(name, email, publicKey, signature, msg.sender);
     }
 
     /**
@@ -133,7 +133,7 @@ contract BlockchainAuthMain is BaseStructures {
         bytes32 metadata,
         bytes calldata signature
     ) external returns (bool success, string memory message) {
-        return deviceManager.registerDevice(deviceType, did, publicKey, name, metadata, signature);
+        return deviceManager.registerDevice(deviceType, did, publicKey, name, metadata, signature, msg.sender);
     }
 
     /**
@@ -192,7 +192,7 @@ contract BlockchainAuthMain is BaseStructures {
      */
     function createNetwork(bytes32 networkId, string calldata name)
     external returns (bool success, string memory message) {
-        return networkManager.createNetwork(networkId, name);
+        return networkManager.createNetwork(msg.sender, networkId, name);
     }
 
     /**
@@ -200,7 +200,7 @@ contract BlockchainAuthMain is BaseStructures {
      */
     function grantAccess(bytes32 did, bytes32 networkId)
     external returns (bool success, string memory message) {
-        return networkManager.grantAccess(did, networkId);
+        return networkManager.grantAccess(did, networkId, msg.sender);
     }
 
     /**
