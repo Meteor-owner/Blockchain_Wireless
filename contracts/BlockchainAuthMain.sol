@@ -118,6 +118,10 @@ contract BlockchainAuthMain is BaseStructures {
         return userManager.getUserList(offset, limit);
     }
 
+    function deactivateUser() external returns (bool success, string memory message) {
+        return userManager.deactivateUser(msg.sender);
+    }
+
     // =================================
     // 设备管理相关委托函数
     // =================================

@@ -75,8 +75,8 @@ contract UserManagement is BaseStructures, CryptoUtils {
     /**
      * @dev 只允许已注册且活跃的用户调用
      */
-    modifier onlyActiveUser() {
-        require(registeredUsers[msg.sender] && users[msg.sender].isActive,
+    modifier onlyActiveUser(address sender) {
+        require(registeredUsers[sender] && users[sender].isActive,
             "Requires active registered user");
         _;
     }
@@ -473,7 +473,7 @@ contract UserManagement is BaseStructures, CryptoUtils {
         string calldata email,
         bytes calldata publicKey,
         address sender
-    ) external onlyActiveUser returns (bool success, string memory message) {
+    ) external onlyActiveUser(sender) returns (bool success, string memory message) {
         // 检查用户是否已注册
         if (users[sender].userAddress == address(0)) {
             return (false, "User not registered");
@@ -507,21 +507,21 @@ contract UserManagement is BaseStructures, CryptoUtils {
     /**
      * @dev 停用用户账户
      */
-    function deactivateUser() external onlyActiveUser returns (bool success, string memory message) {
+    function deactivateUser(address sender) external onlyActiveUser(sender) returns (bool success, string memory message) {
         // 检查用户是否已注册
-        if (users[msg.sender].userAddress == address(0)) {
+        if (users[sender].userAddress == address(0)) {
             return (false, "User not registered");
         }
 
         // 系统管理员不能停用自己
-        if (users[msg.sender].role == UserRole.SYSTEM_ADMIN && msg.sender == systemAdmin) {
+        if (users[sender].role == UserRole.SYSTEM_ADMIN && msg.sender == systemAdmin) {
             return (false, "System admin cannot deactivate themselves");
         }
 
         // 停用用户账户
-        users[msg.sender].isActive = false;
+        users[sender].isActive = false;
 
-        emit UserDeactivated(msg.sender);
+        emit UserDeactivated(sender);
 
         return (true, "User deactivated successfully");
     }
