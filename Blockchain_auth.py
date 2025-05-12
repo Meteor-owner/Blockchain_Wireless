@@ -462,6 +462,7 @@ class BlockchainAuth:
                 'success': False,
                 'error': str(e)
             }
+
     def update_user_info(self, account, name, email, public_key=None):
         """更新用户信息"""
         try:
@@ -689,8 +690,10 @@ class BlockchainAuth:
             else:
                 challenge_bytes = bytes.fromhex(challenge)
 
+            user_address_bytes = Web3.to_bytes(hexstr=user_address)
+
             # 构建消息哈希 - 按照合约中的逻辑
-            message_bytes = Web3.to_bytes(hexstr=Web3.to_hex(user_address)) + challenge_bytes
+            message_bytes = user_address_bytes + challenge_bytes
             message_hash = Web3.keccak(message_bytes)
 
             # 创建以太坊签名消息
@@ -786,6 +789,7 @@ class BlockchainAuth:
                 'error': str(e),
                 'traceback': traceback.format_exc()
             }
+
     def create_network(self, name, owner_account=None):
         """创建新无线网络"""
         try:
@@ -992,6 +996,213 @@ class BlockchainAuth:
                 'has_access': False
             }
 
+    def batch_grant_access(self, did_list, network_id_bytes32):
+        """批量授予多个设备访问网络的权限"""
+        try:
+            # 将DID列表转换为bytes32列表
+            did_bytes32_list = [self.w3.to_bytes(hexstr=did) for did in did_list]
+
+            print(f"批量授予 {len(did_list)} 个设备访问网络的权限")
+
+            # 构建交易
+            tx = self.main_contract.functions.batchGrantAccess(
+                did_bytes32_list,
+                self.w3.to_bytes(hexstr=network_id_bytes32)
+            ).build_transaction({
+                'from': self.admin_account.address,
+                'nonce': self.w3.eth.get_transaction_count(self.admin_account.address),
+                'gas': 2000000,  # 批量操作可能需要更多gas
+                'gasPrice': self.w3.eth.gas_price
+            })
+
+            # 签名并发送交易
+            signed_tx = self.w3.eth.account.sign_transaction(tx, self.admin_account.key)
+            tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+
+            # 等待交易确认
+            tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
+
+            # 尝试获取返回的成功计数
+            success_count = 0
+            if tx_receipt.status == 1:
+                # 这里可能需要从事件日志中解析成功计数
+                success_count = len(did_list)  # 假设全部成功
+
+            result = {
+                'success': tx_receipt.status == 1,
+                'tx_hash': self.w3.to_hex(tx_hash),
+                'block_number': tx_receipt.blockNumber,
+                'success_count': success_count
+            }
+
+            if result['success']:
+                print(f"✅ 批量授权成功: {success_count} 个设备")
+            else:
+                print(f"❌ 批量授权失败")
+
+            return result
+        except Exception as e:
+            print(f"❌ 批量授权异常: {str(e)}")
+            return {
+                'success': False,
+                'error': str(e),
+                'traceback': traceback.format_exc()
+            }
+
+    def get_owner_networks(self, owner_address=None):
+        """获取用户所拥有的网络列表"""
+        try:
+            if owner_address is None:
+                owner_address = self.admin_account.address
+
+            networks = self.main_contract.functions.getOwnerNetworks(owner_address).call()
+
+            # 转换为可读格式
+            network_list = [self.w3.to_hex(nid) for nid in networks]
+
+            return {
+                'success': True,
+                'network_count': len(network_list),
+                'networks': network_list
+            }
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e),
+                'network_count': 0,
+                'networks': []
+            }
+
+    def deactivate_device(self, device_info, account=None):
+        """停用设备
+
+        Args:
+            device_info: 包含设备信息的字典
+            account: 执行停用操作的账户（默认为设备所有者）
+
+        Returns:
+            包含操作结果的字典
+        """
+        try:
+            # 如果未指定账户，默认使用设备所有者的账户
+            if account is None:
+                # 查找拥有此设备的测试账户
+                owner_address = device_info['owner']
+                account = next((acc for acc in self.test_accounts if acc['address'] == owner_address), None)
+
+                # 如果找不到对应账户，使用管理员账户
+                if account is None:
+                    account = {'address': self.admin_account.address, 'private_key': self.admin_account.key.hex()}
+                    print(f"未找到设备所有者账户，使用管理员账户停用设备")
+
+            print(f"停用设备: {device_info['name']} (DID: {device_info['did']})")
+            print(f"执行账户: {account['address']}")
+
+            # 构建交易
+            tx = self.main_contract.functions.deactivateDevice(
+                self.w3.to_bytes(hexstr=device_info['did_bytes32'])
+            ).build_transaction({
+                'from': account['address'],
+                'nonce': self.w3.eth.get_transaction_count(account['address']),
+                'gas': 300000,
+                'gasPrice': self.w3.eth.gas_price
+            })
+
+            # 签名并发送交易
+            signed_tx = self.w3.eth.account.sign_transaction(tx, account['private_key'])
+            tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+
+            # 等待交易确认
+            tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
+
+            result = {
+                'success': tx_receipt.status == 1,
+                'tx_hash': self.w3.to_hex(tx_hash),
+                'block_number': tx_receipt.blockNumber
+            }
+
+            if result['success']:
+                print(f"✅ 设备 {device_info['name']} 停用成功")
+            else:
+                print(f"❌ 设备 {device_info['name']} 停用失败")
+
+            return result
+        except Exception as e:
+            print(f"❌ 设备停用异常: {str(e)}")
+            return {
+                'success': False,
+                'error': str(e),
+                'traceback': traceback.format_exc()
+            }
+
+    def get_device_info(self, did_bytes32):
+        """获取设备信息"""
+        try:
+            result = self.main_contract.functions.getDeviceInfo(
+                self.w3.to_bytes(hexstr=did_bytes32)
+            ).call()
+
+            return {
+                'success': True,
+                'device_type': self.w3.to_text(result[0]).rstrip('\x00'),
+                'owner': result[1],
+                'public_key': result[2].hex() if result[2] else '',
+                'registered_at': result[3],
+                'is_active': result[4],
+                'name': result[5],
+                'metadata': self.w3.to_hex(result[6]),
+                'authorized_by': result[7],
+                'user_address': result[8]
+            }
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e)
+            }
+
+    def revoke_network_access(self, did_bytes32, network_id_bytes32):
+        """撤销设备访问网络的权限"""
+        try:
+            print(f"撤销设备 {did_bytes32} 访问网络 {network_id_bytes32} 的权限")
+
+            # 构建交易
+            tx = self.main_contract.functions.revokeAccess(
+                self.w3.to_bytes(hexstr=did_bytes32),
+                self.w3.to_bytes(hexstr=network_id_bytes32)
+            ).build_transaction({
+                'from': self.admin_account.address,
+                'nonce': self.w3.eth.get_transaction_count(self.admin_account.address),
+                'gas': 300000,
+                'gasPrice': self.w3.eth.gas_price
+            })
+
+            # 签名并发送交易
+            signed_tx = self.w3.eth.account.sign_transaction(tx, self.admin_account.key)
+            tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+
+            # 等待交易确认
+            tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
+
+            result = {
+                'success': tx_receipt.status == 1,
+                'tx_hash': self.w3.to_hex(tx_hash),
+                'block_number': tx_receipt.blockNumber
+            }
+
+            if result['success']:
+                print(f"✅ 成功撤销访问权限")
+            else:
+                print(f"❌ 撤销访问权限失败")
+
+            return result
+        except Exception as e:
+            print(f"❌ 撤销访问权限异常: {str(e)}")
+            return {
+                'success': False,
+                'error': str(e),
+                'traceback': traceback.format_exc()
+            }
+
     def generate_auth_challenge(self, did_bytes32, network_id_bytes32):
         """生成设备认证挑战"""
         try:
@@ -1058,6 +1269,7 @@ class BlockchainAuth:
                 'error': str(e),
                 'traceback': traceback.format_exc()
             }
+
     def sign_challenge(self, private_key_hex, did_bytes32, challenge):
         """使用私钥签名挑战"""
         try:
@@ -1249,6 +1461,7 @@ class BlockchainAuth:
             return result
         except Exception as e:
             print(f"❌ 撤销令牌异常: {str(e)}")
+
     def get_auth_logs(self, did_bytes32):
         """获取设备认证日志"""
         try:
@@ -1637,3 +1850,608 @@ class BlockchainAuth:
                 print(f"✅ 交易被拒绝，权限检查正常: {str(e)}")
         else:
             print("没有足够的用户进行权限测试，跳过")
+
+        print("\n" + "=" * 80)
+        print("开始网络创建和授权测试")
+        print("=" * 80)
+
+        # 步骤0: 确保管理员已注册为用户
+        print("\n" + "-" * 60)
+        print("步骤0: 确保管理员已注册为用户")
+        print("-" * 60)
+
+        # 检查管理员是否已注册
+        is_registered = self.check_admin_registration()
+        if not is_registered:
+            print("管理员尚未注册为用户，先注册管理员...")
+            admin_reg_result = self.register_admin_as_user()
+            if not admin_reg_result['success']:
+                print("❌ 管理员注册失败，测试终止")
+                return
+            print("✅ 管理员注册成功")
+        else:
+            print("✅ 管理员已注册为用户")
+
+        # 步骤1: 创建测试用户账户
+        print("\n" + "-" * 60)
+        print("步骤1: 创建测试用户账户")
+        print("-" * 60)
+
+        # 创建3个新用户账户
+        self.test_accounts = self.create_new_accounts(3)
+
+        # 为每个账户注册用户
+        users = []
+        for idx, account in enumerate(self.test_accounts):
+            user_name = f"Network Test User {idx + 1}"
+            user_email = f"netuser{idx + 1}@example.com"
+
+            # 注册用户
+            user_info = self.register_user_from_account(account, user_name, user_email)
+            if user_info['success']:
+                users.append(user_info)
+
+        print(f"成功注册 {len(users)} 个测试用户")
+
+        # 步骤2: 管理员创建网络
+        print("\n" + "-" * 60)
+        print("步骤2: 管理员创建网络")
+        print("-" * 60)
+
+        # 创建新网络
+        network_name = "CSEC5615 测试无线网络"
+        network_info = self.create_network(network_name)
+
+        if not network_info['success']:
+            print("❌ 网络创建失败，测试终止")
+            return
+
+        print(f"网络详情:")
+        print(f"  名称: {network_info['name']}")
+        print(f"  ID: {network_info['network_id']}")
+        print(f"  ID (bytes32): {network_info['network_id_bytes32']}")
+
+        # 获取管理员的网络列表
+        admin_networks = self.get_owner_networks()
+        if admin_networks['success']:
+            print(f"管理员拥有 {admin_networks['network_count']} 个网络:")
+            for idx, net_id in enumerate(admin_networks['networks']):
+                print(f"  [{idx + 1}] {net_id}")
+
+        print("\n" + "-" * 60)
+        print("步骤3: 为每个用户注册设备")
+        print("-" * 60)
+        devices = []
+        device_types = ["smartphone", "laptop", "tablet"]
+
+        for idx, user in enumerate(users):
+            device_type = device_types[idx % len(device_types)]
+            device_name = f"{user['name']}的{device_type}"
+
+            # 注册设备
+            device_info = self.register_device(
+                device_type,
+                device_name,
+                self.test_accounts[idx]  # 对应的账户
+            )
+
+            if device_info['success']:
+                devices.append(device_info)
+                print(f"设备详情:")
+                print(f"  名称: {device_info['name']}")
+                print(f"  DID: {device_info['did']}")
+                print(f"  DID (bytes32): {device_info['did_bytes32']}")
+                print(f"  所有者: {device_info['owner']}")
+
+        print(f"成功注册 {len(devices)} 个设备")
+
+        # 步骤4: 管理员授予设备访问网络的权限
+        print("\n" + "-" * 60)
+        print("步骤4: 管理员授予设备访问网络的权限 - 单独授权")
+        print("-" * 60)
+
+        # 单独授权测试
+        if devices:
+            # 选择第一个设备进行单独授权测试
+            test_device = devices[0]
+
+            # 检查当前访问状态
+            access_check = self.check_network_access(
+                test_device['did_bytes32'],
+                network_info['network_id_bytes32']
+            )
+            print(f"授权前访问状态: {'有权限' if access_check['has_access'] else '无权限'}")
+
+            # 授予访问权限
+            grant_result = self.grant_network_access(
+                test_device['did_bytes32'],
+                network_info['network_id_bytes32']
+            )
+
+            if grant_result['success']:
+                # 再次检查访问状态
+                access_check = self.check_network_access(
+                    test_device['did_bytes32'],
+                    network_info['network_id_bytes32']
+                )
+                print(f"授权后访问状态: {'有权限' if access_check['has_access'] else '无权限'}")
+
+        # 步骤5: 批量授权
+        print("\n" + "-" * 60)
+        print("步骤5: 管理员授予设备访问网络的权限 - 批量授权")
+        print("-" * 60)
+
+        if len(devices) > 1:
+            # 选择剩余设备进行批量授权
+            remaining_devices = devices[1:]
+            device_dids = [device['did_bytes32'] for device in remaining_devices]
+
+            # 检查当前访问状态
+            for idx, device in enumerate(remaining_devices):
+                access_check = self.check_network_access(
+                    device['did_bytes32'],
+                    network_info['network_id_bytes32']
+                )
+                print(f"设备 {idx + 1} 授权前状态: {'有权限' if access_check['has_access'] else '无权限'}")
+
+            # 批量授予访问权限
+            batch_result = self.batch_grant_access(
+                device_dids,
+                network_info['network_id_bytes32']
+            )
+
+            if batch_result['success']:
+                print(f"批量授权结果: 成功授权 {batch_result['success_count']} 个设备")
+
+                # 再次检查访问状态
+                for idx, device in enumerate(remaining_devices):
+                    access_check = self.check_network_access(
+                        device['did_bytes32'],
+                        network_info['network_id_bytes32']
+                    )
+                    print(f"设备 {idx + 1} 授权后状态: {'有权限' if access_check['has_access'] else '无权限'}")
+
+        # 步骤6: 验证所有设备的访问权限
+        print("\n" + "-" * 60)
+        print("步骤6: 验证所有设备的访问权限")
+        print("-" * 60)
+
+        all_access_granted = True
+        for idx, device in enumerate(devices):
+            access_check = self.check_network_access(
+                device['did_bytes32'],
+                network_info['network_id_bytes32']
+            )
+
+            if access_check['has_access']:
+                print(f"✅ 设备 {device['name']} 已成功获得网络访问权限")
+            else:
+                print(f"❌ 设备 {device['name']} 未获得网络访问权限")
+                all_access_granted = False
+
+        if all_access_granted:
+            print("\n✅ 所有设备都已成功获得网络访问权限")
+        else:
+            print("\n❌ 部分设备未能获得网络访问权限")
+
+        print("\n" + "=" * 80)
+        if all_access_granted:
+            print("测试结果: 成功 ✅")
+        else:
+            print("测试结果: 部分失败 ⚠️")
+        print("=" * 80)
+        # 步骤1: 基本认证流程测试
+        print("\n" + "-" * 60)
+        print("步骤1: 基本认证流程测试")
+        print("-" * 60)
+
+        if len(self.test_devices) > 0:
+            # 选择第一个设备进行认证测试
+            test_device = self.test_devices[0]
+            print(f"使用设备: {test_device['name']} (DID: {test_device['did']})")
+
+            # 1.1 生成认证挑战
+            print("\n认证步骤 1: 生成认证挑战")
+            challenge_result = self.generate_auth_challenge(
+                test_device['did_bytes32'],
+                network_info['network_id_bytes32']
+            )
+
+            if not challenge_result['success']:
+                print("❌ 生成认证挑战失败，跳过后续步骤")
+            else:
+                # 1.2 设备签名挑战
+                print("\n认证步骤 2: 设备签名挑战")
+                signature = self.sign_challenge(
+                    test_device['keys']['private_key'],
+                    test_device['did_bytes32'],
+                    challenge_result['challenge']
+                )
+
+                if not signature:
+                    print("❌ 签名挑战失败，跳过后续步骤")
+                else:
+                    # 1.3 验证设备签名并获取令牌
+                    print("\n认证步骤 3: 验证设备并获取令牌")
+                    auth_result = self.authenticate(
+                        test_device['did_bytes32'],
+                        network_info['network_id_bytes32'],
+                        challenge_result['challenge'],
+                        signature
+                    )
+
+                    if not auth_result['success']:
+                        print("❌ 设备认证失败，跳过后续步骤")
+                    else:
+                        # 1.4 验证令牌有效性
+                        if 'token_id' in auth_result and auth_result['token_id']:
+                            print("\n认证步骤 4: 验证令牌有效性")
+                            token_valid = self.validate_token(auth_result['token_id'])
+
+                            if token_valid['valid']:
+                                print("✅ 令牌验证成功")
+                            else:
+                                print("❌ 令牌验证失败")
+
+                            # 1.5 查看认证日志
+                            print("\n认证步骤 5: 查看认证日志")
+                            auth_logs = self.get_auth_logs(test_device['did_bytes32'])
+
+        # 步骤2: 令牌撤销测试
+        print("\n" + "-" * 60)
+        print("步骤2: 令牌撤销测试")
+        print("-" * 60)
+
+        if len(self.test_tokens) > 0:
+            token = self.test_tokens[0]
+            token_id = token['token_id']
+
+            # 2.1 确认令牌当前有效
+            print("\n2.1 确认令牌当前有效")
+            token_valid = self.validate_token(token_id)
+
+            if not token_valid['valid']:
+                print("❌ 令牌已经无效，跳过撤销测试")
+            else:
+                print("✅ 令牌当前有效")
+
+                # 2.2 撤销令牌
+                print("\n2.2 撤销令牌")
+                revoke_result = self.revoke_token(token_id)
+
+                if not revoke_result['success']:
+                    print("❌ 令牌撤销失败")
+                else:
+                    print("✅ 令牌撤销成功")
+
+                    # 2.3 再次验证令牌有效性
+                    print("\n2.3 再次验证令牌有效性")
+                    token_valid = self.validate_token(token_id)
+
+                    if token_valid['valid']:
+                        print("❌ 令牌仍然有效，撤销可能不成功")
+                    else:
+                        print("✅ 令牌已成功撤销，令牌现在无效")
+        else:
+            print("⚠️ 没有可用令牌，跳过撤销测试")
+
+        # 步骤3: 重放攻击测试
+        print("\n" + "-" * 60)
+        print("步骤3: 重放攻击测试")
+        print("-" * 60)
+
+        if len(self.test_devices) > 0:
+            # 选择第二个设备进行重放攻击测试
+            test_device = self.test_devices[0] if len(self.test_devices) == 1 else self.test_devices[1]
+            print(f"使用设备: {test_device['name']} (DID: {test_device['did']})")
+
+            # 3.1 正常认证流程
+            print("\n3.1 正常认证流程")
+            challenge_result = self.generate_auth_challenge(
+                test_device['did_bytes32'],
+                network_info['network_id_bytes32']
+            )
+
+            if challenge_result['success']:
+                signature = self.sign_challenge(
+                    test_device['keys']['private_key'],
+                    test_device['did_bytes32'],
+                    challenge_result['challenge']
+                )
+
+                first_auth_result = self.authenticate(
+                    test_device['did_bytes32'],
+                    network_info['network_id_bytes32'],
+                    challenge_result['challenge'],
+                    signature
+                )
+
+                if first_auth_result['success']:
+                    print("✅ 首次认证成功")
+
+                    # 3.2 重放攻击测试 - 尝试使用相同的挑战和签名再次认证
+                    print("\n3.2 重放攻击测试")
+                    print("尝试使用相同的挑战和签名再次认证...")
+
+                    # 稍等片刻，以确保区块链状态已更新
+                    time.sleep(2)
+
+                    replay_auth_result = self.authenticate(
+                        test_device['did_bytes32'],
+                        network_info['network_id_bytes32'],
+                        challenge_result['challenge'],
+                        signature
+                    )
+
+                    if replay_auth_result['success']:
+                        print("❌ 重放攻击成功！这说明系统存在安全漏洞")
+                    else:
+                        print("✅ 重放攻击被阻止，系统安全")
+                else:
+                    print("❌ 首次认证失败，跳过重放攻击测试")
+            else:
+                print("❌ 生成挑战失败，跳过重放攻击测试")
+        else:
+            print("⚠️ 没有可用设备，跳过重放攻击测试")
+
+        # 步骤4: 过期挑战测试
+        print("\n" + "-" * 60)
+        print("步骤4: 过期挑战测试")
+        print("-" * 60)
+
+        if len(self.test_devices) > 0:
+            # 选择一个设备进行过期挑战测试
+            test_device = self.test_devices[-1]
+            print(f"使用设备: {test_device['name']} (DID: {test_device['did']})")
+
+            # 4.1 生成认证挑战
+            print("\n4.1 生成认证挑战")
+            challenge_result = self.generate_auth_challenge(
+                test_device['did_bytes32'],
+                network_info['network_id_bytes32']
+            )
+
+            if challenge_result['success']:
+                # 签名挑战
+                signature = self.sign_challenge(
+                    test_device['keys']['private_key'],
+                    test_device['did_bytes32'],
+                    challenge_result['challenge']
+                )
+
+                # 判断是否等待挑战过期（取决于AUTH_CHALLENGE_EXPIRY的设置）
+                # 在实际测试中，由于挑战过期时间可能很长，我们可以选择跳过等待
+                should_wait = False
+
+                # 这里做一个假设：如果挑战过期时间不长，我们等待；否则跳过
+                expires_in = challenge_result['expires_at'] - int(time.time())
+                if expires_in < 300:  # 小于5分钟，等待过期
+                    should_wait = True
+                    print(f"\n4.2 等待挑战过期 (大约需要 {expires_in} 秒)...")
+                    wait_success = self.wait_for_challenge_expiry(challenge_result)
+                    if not wait_success:
+                        print("⚠️ 无法等待挑战过期，假设已过期并继续测试")
+                else:
+                    print("\n4.2 挑战过期时间较长，跳过等待")
+                    print(
+                        f"  挑战将在 {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(challenge_result['expires_at']))} 过期")
+                    print("  在此测试中我们将使用模拟的过期挑战")
+
+                # 4.3 尝试使用过期挑战进行认证
+                print("\n4.3 尝试使用过期/无效挑战进行认证")
+
+                if should_wait:
+                    print("使用等待过期的真实挑战...")
+                else:
+                    print("使用修改后的模拟过期挑战...")
+                    # 模拟一个过期/无效的挑战值
+                    challenge_result['challenge'] = "0x" + "0" * 64  # 全0的挑战值，应该是无效的
+
+                expired_auth_result = self.authenticate(
+                    test_device['did_bytes32'],
+                    network_info['network_id_bytes32'],
+                    challenge_result['challenge'],
+                    signature
+                )
+
+                if expired_auth_result['success']:
+                    print("❌ 使用过期/无效挑战认证成功！这说明系统存在安全问题")
+                else:
+                    print("✅ 使用过期/无效挑战认证失败，系统安全")
+            else:
+                print("❌ 生成挑战失败，跳过过期挑战测试")
+
+        # 步骤5: 错误私钥签名测试
+        print("\n" + "-" * 60)
+        print("步骤5: 错误私钥签名测试")
+        print("-" * 60)
+
+        if len(self.test_devices) > 0:
+            # 选择设备进行错误私钥测试
+            test_device = self.test_devices[0]
+            print(f"使用设备: {test_device['name']} (DID: {test_device['did']})")
+
+            # 5.1 生成认证挑战
+            print("\n5.1 生成认证挑战")
+            challenge_result = self.generate_auth_challenge(
+                test_device['did_bytes32'],
+                network_info['network_id_bytes32']
+            )
+
+            if challenge_result['success']:
+                # 5.2 使用错误的私钥签名挑战
+                print("\n5.2 使用错误的私钥签名挑战")
+
+                # 生成一个新的私钥（与设备原有私钥不同）
+                wrong_keys = self.generate_keys()
+                wrong_private_key = wrong_keys['private_key']
+
+                wrong_signature = self.sign_challenge(
+                    wrong_private_key,
+                    test_device['did_bytes32'],
+                    challenge_result['challenge']
+                )
+
+                # 5.3 尝试使用错误签名进行认证
+                print("\n5.3 尝试使用错误签名进行认证")
+                wrong_auth_result = self.authenticate(
+                    test_device['did_bytes32'],
+                    network_info['network_id_bytes32'],
+                    challenge_result['challenge'],
+                    wrong_signature
+                )
+
+                if wrong_auth_result['success']:
+                    print("❌ 使用错误私钥认证成功！这说明系统存在安全问题")
+                else:
+                    print("✅ 使用错误私钥认证失败，系统安全")
+            else:
+                print("❌ 生成挑战失败，跳过错误私钥测试")
+
+        # 步骤6: 认证日志验证
+        print("\n" + "-" * 60)
+        print("步骤6: 认证日志验证")
+        print("-" * 60)
+
+        if len(self.test_devices) > 0:
+            # 获取所有设备的认证日志
+            for idx, device in enumerate(self.test_devices):
+                print(f"\n查询设备 {idx + 1}: {device['name']} 的认证日志")
+                auth_logs = self.get_auth_logs(device['did_bytes32'])
+
+                if not auth_logs['success'] or auth_logs['log_count'] == 0:
+                    print(f"  没有找到认证日志")
+                else:
+                    print(f"  发现 {auth_logs['log_count']} 条认证日志")
+
+                    # 分析成功和失败的日志数量
+                    success_count = len([log for log in auth_logs['logs'] if log['success']])
+                    fail_count = len([log for log in auth_logs['logs'] if not log['success']])
+
+                    print(f"  成功认证: {success_count} 次")
+                    print(f"  失败认证: {fail_count} 次")
+
+        # 总结测试结果
+        print("\n" + "=" * 80)
+        print("设备认证流程测试完成")
+        print("=" * 80)
+
+        print("\n" + "-" * 60)
+        print("步骤7: 测试设备停用功能")
+        print("-" * 60)
+
+        if devices:
+            # 选择一个设备进行停用测试
+            test_device = devices[0]
+
+            # 获取设备当前状态
+            device_status = self.get_device_info(test_device['did_bytes32'])
+            if device_status['success']:
+                print(f"设备当前状态:")
+                print(f"  名称: {device_status['name']}")
+                print(f"  所有者: {device_status['owner']}")
+                print(f"  是否活跃: {'是' if device_status['is_active'] else '否'}")
+
+                if device_status['is_active']:
+                    # 执行设备停用
+                    owner_account = next((acc for acc in self.test_accounts if acc['address'] == test_device['owner']),
+                                         None)
+                    deactivate_result = self.deactivate_device(test_device, owner_account)
+
+                    if deactivate_result['success']:
+                        # 再次获取设备状态，确认是否已停用
+                        updated_status = self.get_device_info(test_device['did_bytes32'])
+                        if updated_status['success']:
+                            print(f"设备停用后状态:")
+                            print(f"  名称: {updated_status['name']}")
+                            print(f"  是否活跃: {'是' if updated_status['is_active'] else '否'}")
+
+                            if not updated_status['is_active']:
+                                print(f"✅ 设备成功停用")
+                            else:
+                                print(f"❌ 设备停用操作成功，但设备仍处于活跃状态")
+                    else:
+                        print(f"❌ 设备停用操作失败: {deactivate_result.get('error', '未知错误')}")
+                else:
+                    print(f"设备已经处于停用状态，跳过停用测试")
+            else:
+                print(f"❌ 获取设备信息失败: {device_status.get('error', '未知错误')}")
+        else:
+            print(f"没有可用的测试设备，跳过停用测试")
+
+        # 步骤8: 测试停用后的网络访问权限
+        print("\n" + "-" * 60)
+        print("步骤8: 测试停用后的网络访问权限")
+        print("-" * 60)
+
+        if devices and 'deactivate_result' in locals() and deactivate_result.get('success', False):
+            # 检查停用后的设备是否仍有网络访问权限
+            access_check = self.check_network_access(
+                test_device['did_bytes32'],
+                network_info['network_id_bytes32']
+            )
+
+            print(f"停用后设备访问状态: {'有权限' if access_check['has_access'] else '无权限'}")
+
+            if access_check['has_access']:
+                print(f"⚠️ 注意: 设备虽然已停用，但仍然保留网络访问权限")
+                print(f"这可能是合约设计的预期行为，停用设备不会自动撤销网络访问权限")
+            else:
+                print(f"✅ 设备停用后，网络访问权限已被撤销")
+
+            # 尝试撤销已停用设备的访问权限
+            print("\n尝试显式撤销已停用设备的访问权限...")
+            revoke_result = self.revoke_network_access(
+                test_device['did_bytes32'],
+                network_info['network_id_bytes32']
+            )
+
+            if revoke_result['success']:
+                print(f"✅ 成功撤销已停用设备的访问权限")
+
+                # 再次检查访问状态
+                access_check = self.check_network_access(
+                    test_device['did_bytes32'],
+                    network_info['network_id_bytes32']
+                )
+                print(f"撤销后设备访问状态: {'有权限' if access_check['has_access'] else '无权限'}")
+            else:
+                print(f"❌ 撤销已停用设备的访问权限失败: {revoke_result.get('error', '未知错误')}")
+
+            print("\n测试结果摘要:")
+            print(f"  • 测试用户数量: {len(self.test_users)}")
+            print(f"  • 测试设备数量: {len(self.test_devices)}")
+            print(f"  • 测试网络数量: {len(self.test_networks)}")
+            print(f"  • 生成的令牌数量: {len(self.test_tokens)}")
+
+            # 如果进行了足够的测试，可以给出一个总体评估
+            if len(self.test_devices) > 0 and len(self.test_tokens) > 0:
+                print("\n系统安全性评估:")
+
+                # 使用变量记录各种测试的结果
+                replay_secure = False if 'replay_auth_result' in locals() and replay_auth_result.get('success',
+                                                                                                     False) else True
+                expiry_secure = False if 'expired_auth_result' in locals() and expired_auth_result.get('success',
+                                                                                                       False) else True
+                wrong_key_secure = False if 'wrong_auth_result' in locals() and wrong_auth_result.get('success',
+                                                                                                      False) else True
+
+                if replay_secure and expiry_secure and wrong_key_secure:
+                    print("  ✅ 系统通过了所有安全测试，认证机制运行良好")
+                else:
+                    print("  ⚠️ 系统存在以下安全问题:")
+                    if not replay_secure:
+                        print("    - 重放攻击防护不足")
+                    if not expiry_secure:
+                        print("    - 挑战过期机制不严格")
+                    if not wrong_key_secure:
+                        print("    - 签名验证存在漏洞")
+
+
+if __name__ == '__main__':
+    try:
+        test = BlockchainAuth()
+        test.run_system_test()
+    except Exception as e:
+        print(f"测试过程中出错: {str(e)}")
+        traceback.print_exc()

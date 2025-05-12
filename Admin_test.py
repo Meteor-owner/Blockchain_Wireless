@@ -664,8 +664,10 @@ class SystemManagementTest:
             else:
                 challenge_bytes = bytes.fromhex(challenge)
 
+            user_address_bytes = Web3.to_bytes(hexstr=user_address)
+
             # 构建消息哈希 - 按照合约中的逻辑
-            message_bytes = Web3.to_bytes(hexstr=Web3.to_hex(user_address)) + challenge_bytes
+            message_bytes = user_address_bytes + challenge_bytes
             message_hash = Web3.keccak(message_bytes)
 
             # 创建以太坊签名消息
