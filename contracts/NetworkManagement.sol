@@ -5,27 +5,27 @@ import "./BaseStructures.sol";
 import "./UserManagement.sol";
 
 /**
- * @title 网络管理合约
- * @notice 处理无线网络的创建、访问权限管理等功能
+ * @title Network Management Contract
+ * @notice Handles creation and access permission management of wireless networks
  */
 contract NetworkManagement is BaseStructures {
     // =================================
-    // 存储映射
+    // Storage Mappings
     // =================================
 
-    mapping(bytes32 => Network) internal networks;           // 网络ID => 网络
-    mapping(address => bytes32[]) internal ownerNetworks;    // 所有者 => 网络IDs
-    mapping(bytes32 => mapping(bytes32 => bool)) internal deviceNetworkAccess; // DID => 网络ID => 有无访问权限
+    mapping(bytes32 => Network) internal networks;           // Network ID => Network
+    mapping(address => bytes32[]) internal ownerNetworks;    // Owner => Network IDs
+    mapping(bytes32 => mapping(bytes32 => bool)) internal deviceNetworkAccess; // DID => Network ID => Has access
 
-    // 用户管理合约实例
+    // User management contract instance
     UserManagement internal userManager;
 
-    // 系统默认网络
+    // System default network
     bytes32 public defaultNetworkId;
     string public defaultNetworkName = "Default WiFi Network";
 
     // =================================
-    // 事件定义
+    // Event Definitions
     // =================================
 
     event NetworkCreated(bytes32 indexed networkId, address indexed owner, string name);
@@ -33,11 +33,11 @@ contract NetworkManagement is BaseStructures {
     event AccessRevoked(bytes32 indexed did, bytes32 indexed networkId);
 
     // =================================
-    // 修饰器
+    // Modifiers
     // =================================
 
     /**
-     * @dev 只允许网络所有者调用
+     * @dev Only allow network owner to call
      */
     modifier onlyNetworkOwner(bytes32 networkId) {
         require(networks[networkId].owner == msg.sender, "Only network owner can perform this action");
@@ -45,24 +45,23 @@ contract NetworkManagement is BaseStructures {
     }
 
     /**
-     * @dev 只允许已注册且活跃的用户调用
+     * @dev Only allow registered and active users to call
      */
     modifier onlyActiveUser(address sender) {
         require(userManager.isRegisteredUser(sender), "Requires registered user");
         _;
     }
-
     // =================================
-    // 构造函数
+    // Constructor
     // =================================
 
     /**
-     * @dev 构造函数，设置用户管理合约地址和创建默认网络
+     * @dev Constructor, sets the user management contract address and creates default network
      */
     constructor(address _userManagerAddress) {
         userManager = UserManagement(_userManagerAddress);
 
-        // 创建默认网络
+        // Create default network
         defaultNetworkId = keccak256(abi.encodePacked("default-network", block.timestamp));
         networks[defaultNetworkId] = Network({
             owner: msg.sender,
@@ -77,15 +76,15 @@ contract NetworkManagement is BaseStructures {
     }
 
     // =================================
-    // 网络管理相关函数
+    // Network Management Functions
     // =================================
 
     /**
-     * @dev 创建新的无线网络
-     * @param networkId 网络标识符
-     * @param name 网络名称
-     * @return success 是否成功
-     * @return message 返回消息
+     * @dev Create new wireless network
+     * @param networkId Network identifier
+     * @param name Network name
+     * @return success Whether successful
+     * @return message Return message
      */
     function createNetwork(address sender, bytes32 networkId, string calldata name)
         external onlyActiveUser (sender) returns (bool success, string memory message) {
@@ -109,15 +108,15 @@ contract NetworkManagement is BaseStructures {
     }
 
     /**
-     * @dev 授予设备访问网络的权限
-     * @param did 设备的分布式标识符
-     * @param networkId 网络标识符
-     * @return success 是否成功
-     * @return message 返回消息
+     * @dev Grant device access to network
+     * @param did Device's decentralized identifier
+     * @param networkId Network identifier
+     * @return success Whether successful
+     * @return message Return message
      */
     function grantAccess(bytes32 did, bytes32 networkId, address sender)
         external returns (bool success, string memory message) {
-        // 验证权限：只有网络所有者可以授予访问权限
+        // Verify permission: only network owner can grant access
         bool isAuthorized = networks[networkId].owner == sender;
 
         if (!isAuthorized) {
@@ -136,14 +135,14 @@ contract NetworkManagement is BaseStructures {
     }
 
     /**
-     * @dev 批量授予设备访问网络的权限
-     * @param dids 设备DID数组
-     * @param networkId 网络标识符
-     * @return successCount 成功授权的设备数量
+     * @dev Batch grant devices access to network
+     * @param dids Device DID array
+     * @param networkId Network identifier
+     * @return successCount Number of successfully authorized devices
      */
     function batchGrantAccess(bytes32[] calldata dids, bytes32 networkId, address sender)
         external returns (uint256 successCount) {
-        // 验证权限
+        // Verify permission
         bool isAuthorized = networks[networkId].owner == sender;
 
         require(isAuthorized, "Not authorized to grant access");
@@ -161,15 +160,15 @@ contract NetworkManagement is BaseStructures {
     }
 
     /**
-     * @dev 撤销设备访问网络的权限
-     * @param did 设备的分布式标识符
-     * @param networkId 网络标识符
-     * @return success 是否成功
-     * @return message 返回消息
+     * @dev Revoke device access to network
+     * @param did Device's decentralized identifier
+     * @param networkId Network identifier
+     * @return success Whether successful
+     * @return message Return message
      */
     function revokeAccess(bytes32 did, bytes32 networkId)
         external returns (bool success, string memory message) {
-        // 验证权限
+        // Verify permission
         bool isAuthorized = networks[networkId].owner == msg.sender;
 
         if (!isAuthorized) {
@@ -184,10 +183,10 @@ contract NetworkManagement is BaseStructures {
     }
 
     /**
-     * @dev 检查设备是否有权访问网络
-     * @param did 设备的分布式标识符
-     * @param networkId 网络标识符
-     * @return hasAccess 是否有访问权限
+     * @dev Check if device has access to network
+     * @param did Device's decentralized identifier
+     * @param networkId Network identifier
+     * @return hasAccess Whether device has access
      */
     function checkAccess(bytes32 did, bytes32 networkId)
         external view returns (bool hasAccess) {
@@ -195,9 +194,9 @@ contract NetworkManagement is BaseStructures {
     }
 
     /**
-     * @dev 获取用户的网络列表
-     * @param owner 网络所有者
-     * @return networks 网络ID列表
+     * @dev Get user's network list
+     * @param owner Network owner
+     * @return networks Network ID list
      */
     function getOwnerNetworks(address owner) external view returns (bytes32[] memory) {
         return ownerNetworks[owner];

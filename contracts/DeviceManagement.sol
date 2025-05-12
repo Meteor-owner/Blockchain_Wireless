@@ -6,25 +6,25 @@ import "./CryptoUtils.sol";
 import "./UserManagement.sol";
 
 /**
- * @title 设备管理合约
- * @notice 处理设备注册、更新、停用等功能
+ * @title Device Management Contract
+ * @notice Handles device registration, updates, deactivation, and other functions
  */
 contract DeviceManagement is BaseStructures, CryptoUtils {
     // =================================
-    // 存储映射
+    // Storage Mappings
     // =================================
 
-    mapping(bytes32 => Device) internal devices;             // DID => 设备
-    mapping(address => bytes32[]) internal ownerDevices;     // 所有者 => DIDs
-    mapping(bytes32 => mapping(bytes32 => bool)) internal deviceNetworkAccess; // DID => 网络ID => 有无访问权限
-    mapping(bytes32 => bool) internal usedChallenges;        // 已使用的挑战值 => 是否已使用
-    mapping(bytes32 => uint256) internal challengeTimestamps; // 挑战值 => 创建时间戳
+    mapping(bytes32 => Device) internal devices;             // DID => Device
+    mapping(address => bytes32[]) internal ownerDevices;     // Owner => DIDs
+    mapping(bytes32 => mapping(bytes32 => bool)) internal deviceNetworkAccess; // DID => Network ID => Has access
+    mapping(bytes32 => bool) internal usedChallenges;        // Used challenges => Is used
+    mapping(bytes32 => uint256) internal challengeTimestamps; // Challenge => Creation timestamp
 
-    // 用户管理合约实例
+    // User management contract instance
     UserManagement internal userManager;
 
     // =================================
-    // 事件定义
+    // Event Definitions
     // =================================
 
     event DeviceRegistered(bytes32 indexed did, address indexed owner, bytes32 deviceType, string name, address authorizedBy);
@@ -35,11 +35,11 @@ contract DeviceManagement is BaseStructures, CryptoUtils {
     event DeviceTransferred(bytes32 indexed did, address indexed fromUser, address indexed toUser);
 
     // =================================
-    // 修饰器
+    // Modifiers
     // =================================
 
     /**
-     * @dev 只允许设备所有者调用
+     * @dev Only allow device owner to call
      */
     modifier onlyDeviceOwner(bytes32 did) {
         require(devices[did].owner == msg.sender, "Only device owner can perform this action");
@@ -47,7 +47,7 @@ contract DeviceManagement is BaseStructures, CryptoUtils {
     }
 
     /**
-     * @dev 只允许已注册且活跃的用户调用
+     * @dev Only allow registered and active users to call
      */
     modifier onlyActiveUser(address sender) {
         require(userManager.isRegisteredUser(sender), "Requires registered user");
@@ -55,28 +55,25 @@ contract DeviceManagement is BaseStructures, CryptoUtils {
     }
 
     // =================================
-    // 构造函数
+    // Constructor
     // =================================
 
     /**
-     * @dev 构造函数，设置用户管理合约地址
+     * @dev Constructor, sets the user management contract address
      */
     constructor(address _userManagerAddress) {
         userManager = UserManagement(_userManagerAddress);
-    }
-
-    // =================================
-    // 设备管理相关函数
+    }// =================================
+    // Device Management Functions
     // =================================
 
     /**
-     * @dev 注册新设备并分配给用户
-     * @param deviceType 设备类型
-     * @param did 设备的分布式标识符
-     * @param publicKey 设备的公钥
-     * @param name 设备名称
-     * @param metadata 设备元数据哈希
-     * @param signature 授权者对注册数据的签名
+     * @dev Register new device and assign to user
+     * @param deviceType Device type
+     * @param did Device's decentralized identifier
+     * @param publicKey Device's public key
+     * @param name Device name
+     * @param metadata Device metadata hash
      */
     function registerDevice(
         bytes32 deviceType,
@@ -84,7 +81,6 @@ contract DeviceManagement is BaseStructures, CryptoUtils {
         bytes calldata publicKey,
         string calldata name,
         bytes32 metadata,
-        bytes calldata signature,
         address sender
     ) external onlyActiveUser (sender) returns (bool success, string memory message) {
         if (devices[did].owner != address(0)) {
@@ -97,7 +93,7 @@ contract DeviceManagement is BaseStructures, CryptoUtils {
 
         address authorizer;
 
-        // 这里简化处理，假设用户可以自行注册设备
+        // Simplified handling, assumes users can register devices themselves
         authorizer = msg.sender;
 
         bool deviceRegistry = _registerDeviceInternal(
@@ -113,18 +109,18 @@ contract DeviceManagement is BaseStructures, CryptoUtils {
             return (false, "Device registration failed");
         }
 
-        // 将设备添加到用户的设备列表（此函数需要在用户管理合约中实现）
-        // 这里可能需要调整实现方式，或者通过事件通知用户管理合约
+        // Add device to user's device list (this function needs to be implemented in the user management contract)
+        // Implementation method may need to be adjusted, or notification via events
 
         return (true, "Registration successful");
     }
 
     /**
-     * @dev 内部函数：生成通用挑战值
-     * @param context 挑战值上下文（如"auth"、"registration"、"keyUpdate"等）
-     * @param data1 上下文相关数据1（如设备DID）
-     * @param data2 上下文相关数据2（如网络ID）
-     * @return 生成的挑战值
+     * @dev Internal function: Generate generic challenge value
+     * @param context Challenge context (like "auth", "registration", "keyUpdate", etc.)
+     * @param data1 Context-related data1 (like device DID)
+     * @param data2 Context-related data2 (like network ID)
+     * @return Generated challenge value
      */
     function _generateChallenge(
         string memory context,
@@ -142,7 +138,7 @@ contract DeviceManagement is BaseStructures, CryptoUtils {
     }
 
     /**
-     * @dev 设备注册内部实现
+     * @dev Internal device registration implementation
      */
     function _registerDeviceInternal(
         bytes32 deviceType,
@@ -152,7 +148,7 @@ contract DeviceManagement is BaseStructures, CryptoUtils {
         bytes32 metadata,
         address authorizedBy
     ) internal returns (bool){
-        // 注册设备
+        // Register device
         devices[did] = Device({
             owner: msg.sender,
             deviceType: deviceType,
@@ -166,14 +162,14 @@ contract DeviceManagement is BaseStructures, CryptoUtils {
             userAddress: msg.sender
         });
 
-        // 更新索引
+        // Update index
         ownerDevices[msg.sender].push(did);
 
-        // 为新注册的设备生成注册挑战，用于验证设备确实拥有私钥
+        // Generate registration challenge for the newly registered device to verify it actually possesses the private key
         bytes32 challenge = _generateChallenge("registration", did, bytes32(0));
         challengeTimestamps[challenge] = block.timestamp;
 
-        // 触发事件
+        // Trigger events
         emit DeviceRegistered(did, msg.sender, deviceType, name, authorizedBy);
         emit RegistrationChallenge(did, challenge, block.timestamp + AUTH_CHALLENGE_EXPIRY);
 
@@ -181,45 +177,45 @@ contract DeviceManagement is BaseStructures, CryptoUtils {
     }
 
     /**
-     * @dev 转移设备所有权
-     * @param did 设备ID
-     * @param newOwner 新所有者地址
+     * @dev Transfer device ownership
+     * @param did Device ID
+     * @param newOwner New owner address
      */
     function transferDevice(bytes32 did, address newOwner)
-        external onlyDeviceOwner(did) returns (bool success, string memory message) {
-        // 验证新所有者是活跃用户
+    external onlyDeviceOwner(did) returns (bool success, string memory message) {
+        // Verify new owner is an active user
         require(userManager.isRegisteredUser(newOwner), "New owner must be registered user");
 
-        // 保存原始所有者信息用于事件
+        // Save original owner information for events
         address originalOwner = devices[did].owner;
-        address originalUserAddress = devices[did].userAddress;
+//        address originalUserAddress = devices[did].userAddress;
 
-        // 从原所有者的设备列表中移除
+        // Remove from original owner's device list
         _removeDeviceFromOwner(did, originalOwner);
 
-        // 更新设备所有者
+        // Update device owner
         devices[did].owner = newOwner;
         devices[did].userAddress = newOwner;
 
-        // 将设备添加到新所有者的设备列表
+        // Add device to new owner's device list
         ownerDevices[newOwner].push(did);
 
-        // 触发事件
+        // Trigger event
         emit DeviceTransferred(did, originalOwner, newOwner);
 
         return (true, "Device transferred successfully");
     }
 
     /**
-     * @dev 从设备所有者的列表中移除设备
-     * @param did 设备ID
-     * @param owner 所有者地址
+     * @dev Remove device from owner's list
+     * @param did Device ID
+     * @param owner Owner address
      */
     function _removeDeviceFromOwner(bytes32 did, address owner) internal {
         bytes32[] storage devicesList = ownerDevices[owner];
         for (uint i = 0; i < devicesList.length; i++) {
             if (devicesList[i] == did) {
-                // 通过将最后一个元素移至当前位置并弹出最后一个元素来删除
+                // Delete by moving the last element to the current position and popping the last element
                 devicesList[i] = devicesList[devicesList.length - 1];
                 devicesList.pop();
                 break;
@@ -228,17 +224,17 @@ contract DeviceManagement is BaseStructures, CryptoUtils {
     }
 
     /**
-     * @dev 获取设备信息
-     * @param did 设备的分布式标识符
-     * @return deviceType 设备类型
-     * @return owner 设备所有者
-     * @return publicKey 设备公钥
-     * @return registeredAt 注册时间
-     * @return isActive 设备是否活跃
-     * @return name 设备名称
-     * @return metadata 设备元数据
-     * @return authorizedBy 授权注册的用户
-     * @return userAddress 设备归属的用户地址
+     * @dev Get device information
+     * @param did Device's decentralized identifier
+     * @return deviceType Device type
+     * @return owner Device owner
+     * @return publicKey Device public key
+     * @return registeredAt Registration time
+     * @return isActive Whether device is active
+     * @return name Device name
+     * @return metadata Device metadata
+     * @return authorizedBy User who authorized registration
+     * @return userAddress User address the device belongs to
      */
     function getDeviceInfo(bytes32 did) external view returns (
         bytes32 deviceType,
@@ -268,8 +264,8 @@ contract DeviceManagement is BaseStructures, CryptoUtils {
     }
 
     /**
-     * @dev 停用设备
-     * @param did 设备的分布式标识符
+     * @dev Deactivate device
+     * @param did Device's decentralized identifier
      */
     function deactivateDevice(bytes32 did) external returns (bool success, string memory message) {
         require(
@@ -287,14 +283,14 @@ contract DeviceManagement is BaseStructures, CryptoUtils {
     }
 
     /**
-     * @dev 更新设备信息
-     * @param did 设备的分布式标识符
-     * @param name 新的设备名称
-     * @param metadata 新的元数据哈希
+     * @dev Update device information
+     * @param did Device's decentralized identifier
+     * @param name New device name
+     * @param metadata New metadata hash
      */
     function updateDeviceInfo(bytes32 did, string calldata name, bytes32 metadata)
-        external returns (bool success, string memory message) {
-        // 允许设备所有者或设备的用户更新设备信息
+    external returns (bool success, string memory message) {
+        // Allow device owner or device's user to update device information
         require(
             devices[did].owner == msg.sender ||
             devices[did].userAddress == msg.sender,
@@ -309,9 +305,9 @@ contract DeviceManagement is BaseStructures, CryptoUtils {
     }
 
     /**
-     * @dev 获取用户拥有的设备列表
-     * @param owner 设备所有者
-     * @return devices 设备DID列表
+     * @dev Get list of devices owned by user
+     * @param owner Device owner
+     * @return devices List of device DIDs
      */
     function getOwnerDevices(address owner) external view returns (bytes32[] memory) {
         return ownerDevices[owner];

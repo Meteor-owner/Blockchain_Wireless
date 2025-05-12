@@ -20,17 +20,12 @@ identity-chain/
 │   └── deploy.js                    # Contract deployment script
 ├── python/                          # Python interface and tests
 │   └── test_blockchain.py           # Python interface for contract interaction
-├── ui/                              # User interface components (processing)
-│   ├── app.py                       # Main application file
-│   ├── login_ui.py                  # Login interface
-│   ├── main_ui.py                   # Main UI dashboard
-│   └── session.json                 # Session data
 ├── deployments/                     # Deployment artifacts
 │   └── blockchain-auth-localhost.json # Local deployment information
 ├── hardhat.config.js                # Hardhat configuration
 ├── .env                             # Environment variables (don't commit to version control)
 ├── requirements.txt                 # Python dependencies
-└── demo_wireless_auth.py            # Demo  test script
+└── Blockchain_auth.py               # Test script
 ```
 
 ## Features
@@ -104,13 +99,16 @@ npx hardhat run scripts/deploy.js --network localhost
 
 Run the command-line demo:
 ```bash
-python demo_wireless_auth.py
+python Blockchain_auth.py
 ```
 
-Start the web interface:
-```bash
-python ui/app.py
-```
+[//]: # (Start the web interface:)
+
+[//]: # (```bash)
+
+[//]: # (python ui/app.py)
+
+[//]: # (```)
 
 ## Comparison with WPA2
 

@@ -1,22 +1,22 @@
-// 合约部署脚本 - 模块化版本
+// Contract Deployment Script - Modular Version
 const hre = require("hardhat");
 const fs = require("fs");
 const path = require("path");
 
 async function main() {
-  console.log("开始部署区块链无线网络身份验证系统合约...");
+  console.log("Starting deployment of Blockchain Wireless Network Identity Authentication System contracts...");
 
-  // 获取部署账户
+  // Get deployment account
   const [deployer] = await hre.ethers.getSigners();
-  console.log(`使用部署账户: ${deployer.address}`);
+  console.log(`Using deployment account: ${deployer.address}`);
 
-  // 获取账户余额
+  // Get account balance
   const balance = await deployer.getBalance();
-  console.log(`部署账户余额: ${hre.ethers.utils.formatEther(balance)} ETH`);
+  console.log(`Deployment account balance: ${hre.ethers.utils.formatEther(balance)} ETH`);
 
-  // 配置编译选项以解决 "Stack too deep" 错误
+  // Configure compilation options to solve "Stack too deep" error
   try {
-    console.log("编译合约，启用viaIR和优化...");
+    console.log("Compiling contracts, enabling viaIR and optimization...");
     await hre.run("compile", {
       viaIR: true,
       optimizer: {
@@ -24,35 +24,35 @@ async function main() {
         runs: 200
       }
     });
-    console.log("合约编译成功");
+    console.log("Contract compilation successful");
   } catch (error) {
-    console.error("编译失败:", error);
+    console.error("Compilation failed:", error);
     process.exit(1);
   }
 
   try {
-    console.log("开始部署模块化合约...");
+    console.log("Starting deployment of modular contracts...");
 
-    // 1. 部署主合约 BlockchainAuthMain
-    console.log("部署 BlockchainAuthMain 合约...");
+    // 1. Deploy main contract BlockchainAuthMain
+    console.log("Deploying BlockchainAuthMain contract...");
     const BlockchainAuthMain = await hre.ethers.getContractFactory("BlockchainAuthMain");
     const blockchainAuthMain = await BlockchainAuthMain.deploy();
     await blockchainAuthMain.deployed();
-    console.log(`BlockchainAuthMain 合约已部署至: ${blockchainAuthMain.address}`);
+    console.log(`BlockchainAuthMain contract deployed at: ${blockchainAuthMain.address}`);
 
-    // 2. 获取子合约地址
-    console.log("获取子合约地址...");
+    // 2. Get subcontract addresses
+    console.log("Getting subcontract addresses...");
     const userManagerAddress = await blockchainAuthMain.userManager();
     const deviceManagerAddress = await blockchainAuthMain.deviceManager();
     const networkManagerAddress = await blockchainAuthMain.networkManager();
     const authManagerAddress = await blockchainAuthMain.authManager();
 
-    console.log(`UserManagement 合约地址: ${userManagerAddress}`);
-    console.log(`DeviceManagement 合约地址: ${deviceManagerAddress}`);
-    console.log(`NetworkManagement 合约地址: ${networkManagerAddress}`);
-    console.log(`AuthenticationManager 合约地址: ${authManagerAddress}`);
+    console.log(`UserManagement contract address: ${userManagerAddress}`);
+    console.log(`DeviceManagement contract address: ${deviceManagerAddress}`);
+    console.log(`NetworkManagement contract address: ${networkManagerAddress}`);
+    console.log(`AuthenticationManager contract address: ${authManagerAddress}`);
 
-    // 保存合约部署信息
+    // Save contract deployment information
     const deploymentData = {
       network: hre.network.name,
       mainContract: {
@@ -74,73 +74,73 @@ async function main() {
       }
     };
 
-    // 创建 deployments 目录（如果不存在）
+    // Create deployments directory (if it doesn't exist)
     const deploymentsDir = "./deployments";
     if (!fs.existsSync(deploymentsDir)) {
       fs.mkdirSync(deploymentsDir);
     }
 
-    // 保存部署信息
+    // Save deployment information
     const deploymentFilePath = path.join(deploymentsDir, `blockchain-auth-${hre.network.name}.json`);
     fs.writeFileSync(
       deploymentFilePath,
       JSON.stringify(deploymentData, null, 2)
     );
 
-    console.log("部署信息已保存至:", deploymentFilePath);
+    console.log("Deployment information saved to:", deploymentFilePath);
 
-    // 如果是主网或测试网，验证合约
+    // If main or test network, verify the contract
     if (["mainnet", "goerli", "sepolia"].includes(hre.network.name)) {
-      console.log("等待块确认以进行合约验证...");
+      console.log("Waiting for block confirmation to verify contracts...");
       await blockchainAuthMain.deployTransaction.wait(5);
 
-      console.log("提交主合约验证...");
+      console.log("Submitting main contract for verification...");
       try {
         await hre.run("verify:verify", {
           address: blockchainAuthMain.address,
           constructorArguments: [],
         });
-        console.log("主合约验证成功");
+        console.log("Main contract verification successful");
 
-        // 验证子合约
-        console.log("验证 UserManagement 合约...");
+        // Verify subcontracts
+        console.log("Verifying UserManagement contract...");
         await hre.run("verify:verify", { address: userManagerAddress });
 
-        console.log("验证 DeviceManagement 合约...");
+        console.log("Verifying DeviceManagement contract...");
         await hre.run("verify:verify", {
           address: deviceManagerAddress,
           constructorArguments: [userManagerAddress]
         });
 
-        console.log("验证 NetworkManagement 合约...");
+        console.log("Verifying NetworkManagement contract...");
         await hre.run("verify:verify", {
           address: networkManagerAddress,
           constructorArguments: [userManagerAddress]
         });
 
-        console.log("验证 AuthenticationManager 合约...");
+        console.log("Verifying AuthenticationManager contract...");
         await hre.run("verify:verify", {
           address: authManagerAddress,
           constructorArguments: [deviceManagerAddress, networkManagerAddress]
         });
 
-        console.log("所有合约验证成功");
+        console.log("All contracts verified successfully");
       } catch (error) {
-        console.error("合约验证失败:", error);
+        console.error("Contract verification failed:", error);
       }
     }
 
-    console.log("合约部署完成！");
+    console.log("Contract deployment complete!");
   } catch (error) {
-    console.error("部署过程中出错:", error);
+    console.error("Error during deployment process:", error);
     process.exit(1);
   }
 }
 
-// 执行部署脚本
+// Execute deployment script
 main()
   .then(() => process.exit(0))
   .catch((error) => {
-    console.error("部署失败:", error);
+    console.error("Deployment failed:", error);
     process.exit(1);
   });

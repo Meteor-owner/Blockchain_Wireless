@@ -1,8 +1,9 @@
 """
-区块链无线网络身份验证系统 - 综合测试脚本
-CSEC5615 云安全项目
+Blockchain Wireless Network Identity Authentication System - Comprehensive Test Script
+CSEC5615 Cloud Security Project
 
-此脚本整合了用户注册、网络创建与权限管理、设备注册和认证的完整测试流程
+This script integrates the complete testing process for user registration, network creation
+and permission management, device registration, and authentication
 """
 
 import os
@@ -17,80 +18,80 @@ import json
 import traceback
 import sys
 
-# 加载环境变量
+# Load environment variables
 load_dotenv()
 
 
 class BlockchainAuth:
     def __init__(self, network="localhost"):
-        """初始化Web3连接和合约接口"""
-        # 设置Web3连接
+        """Initialize Web3 connection and contract interfaces"""
+        # Set up Web3 connection
         if network == "localhost":
             self.w3 = Web3(Web3.HTTPProvider("http://127.0.0.1:8545"))
         else:
-            raise ValueError(f"不支持的网络: {network}")
+            raise ValueError(f"Unsupported network: {network}")
 
-        # 检查连接
+        # Check connection
         if not self.w3.is_connected():
-            raise ConnectionError(f"无法连接到 {network} 网络")
+            raise ConnectionError(f"Unable to connect to {network} network")
 
-        print(f"成功连接到 {network} 网络")
+        print(f"Successfully connected to {network} network")
 
-        # 加载主账户私钥
+        # Load primary account private key
         private_key = os.getenv("PRIVATE_KEY")
         if not private_key:
-            raise ValueError("未找到PRIVATE_KEY环境变量")
+            raise ValueError("PRIVATE_KEY environment variable not found")
 
         if not private_key.startswith("0x"):
             private_key = f"0x{private_key}"
 
         self.admin_account = Account.from_key(private_key)
-        print(f"使用管理员账户: {self.admin_account.address}")
+        print(f"Using admin account: {self.admin_account.address}")
 
-        # 从deployments目录加载合约地址
+        # Load contract addresses from deployments directory
         deployment_file = f"./deployments/blockchain-auth-{network}.json"
         if not os.path.exists(deployment_file):
-            raise ValueError(f"未找到合约部署信息: {deployment_file}")
+            raise ValueError(f"Contract deployment information not found: {deployment_file}")
 
         with open(deployment_file, 'r') as f:
             deployment_data = json.load(f)
             self.contract_address = Web3.to_checksum_address(
                 deployment_data['mainContract']['address']
             )
-        print(f"主合约地址: {self.contract_address}")
+        print(f"Main contract address: {self.contract_address}")
 
-        # 加载合约ABI
+        # Load contract ABIs
         self.load_contract_abis()
 
-        # 实例化合约
+        # Instantiate contracts
         self.main_contract = self.w3.eth.contract(
             address=self.contract_address,
             abi=self.main_abi
         )
 
-        # 获取并实例化各个子合约
+        # Get and instantiate each sub-contract
         self.user_manager_address = self.main_contract.functions.userManager().call()
         self.device_manager_address = self.main_contract.functions.deviceManager().call()
         self.network_manager_address = self.main_contract.functions.networkManager().call()
         self.auth_manager_address = self.main_contract.functions.authManager().call()
 
-        # 实例化用户管理合约
+        # Instantiate user management contract
         self.user_manager_contract = self.w3.eth.contract(
             address=self.user_manager_address,
             abi=self.user_manager_abi
         )
 
-        print(f"UserManagement合约地址: {self.user_manager_address}")
-        print(f"DeviceManagement合约地址: {self.device_manager_address}")
-        print(f"NetworkManagement合约地址: {self.network_manager_address}")
-        print(f"AuthenticationManager合约地址: {self.auth_manager_address}")
+        print(f"UserManagement contract address: {self.user_manager_address}")
+        print(f"DeviceManagement contract address: {self.device_manager_address}")
+        print(f"NetworkManagement contract address: {self.network_manager_address}")
+        print(f"AuthenticationManager contract address: {self.auth_manager_address}")
 
-        # 检查系统管理员
+        # Check system administrator
         self.system_admin = self.main_contract.functions.systemAdmin().call()
-        print(f"系统管理员: {self.system_admin}")
-        print(f"当前账户是否为系统管理员: {self.admin_account.address.lower() == self.system_admin.lower()}")
+        print(f"System administrator: {self.system_admin}")
+        print(f"Is current account the system administrator: {self.admin_account.address.lower() == self.system_admin.lower()}")
 
-        # 角色常量
+        # Role constants
         self.USER_ROLE = {
             "NONE": 0,
             "USER": 1,
@@ -98,7 +99,7 @@ class BlockchainAuth:
             "SYSTEM_ADMIN": 3
         }
 
-        # 初始化存储
+        # Initialize storage
         self.test_accounts = []
         self.test_users = []
         self.admin_users = []
@@ -109,20 +110,20 @@ class BlockchainAuth:
         self.test_tokens = []
 
     def load_contract_abis(self):
-        """加载所有需要的合约ABI"""
-        # 加载主合约ABI
+        """Load all required contract ABIs"""
+        # Load main contract ABI
         main_abi_file = "./artifacts/contracts/BlockchainAuthMain.sol/BlockchainAuthMain.json"
         with open(main_abi_file, 'r') as f:
             contract_json = json.load(f)
             self.main_abi = contract_json['abi']
 
-        # 加载UserManagement合约ABI
+        # Load UserManagement contract ABI
         user_abi_file = "./artifacts/contracts/UserManagement.sol/UserManagement.json"
         with open(user_abi_file, 'r') as f:
             contract_json = json.load(f)
             self.user_manager_abi = contract_json['abi']
 
-        # 加载其他子合约ABI（可选）
+        # Load other sub-contract ABIs (optional)
         try:
             # DeviceManagement
             device_abi_file = "./artifacts/contracts/DeviceManagement.sol/DeviceManagement.json"
@@ -142,50 +143,50 @@ class BlockchainAuth:
                 contract_json = json.load(f)
                 self.auth_manager_abi = contract_json['abi']
         except Exception as e:
-            print(f"注意: 无法加载部分子合约ABI: {str(e)}")
-            print(f"这不会影响测试，因为我们主要通过主合约进行交互")
+            print(f"Note: Unable to load some sub-contract ABIs: {str(e)}")
+            print(f"This will not affect testing, as we mainly interact through the main contract")
 
     def get_role_text(self, role_id):
-        """将角色ID转换为文本描述"""
+        """Convert role ID to text description"""
         roles = {
-            0: "未注册",
-            1: "普通用户",
-            2: "网络管理员",
-            3: "系统管理员"
+            0: "Unregistered",
+            1: "Regular User",
+            2: "Network Administrator",
+            3: "System Administrator"
         }
-        return roles.get(role_id, f"未知角色({role_id})")
+        return roles.get(role_id, f"Unknown Role({role_id})")
 
     def check_admin_registration(self):
-        """检查管理员是否已注册为用户"""
+        """Check if administrator is registered as a user"""
         try:
             result = self.main_contract.functions.isRegisteredUser(
                 self.admin_account.address
             ).call()
 
-            print(f"管理员账户 {self.admin_account.address} 注册状态: {'已注册' if result else '未注册'}")
+            print(f"Admin account {self.admin_account.address} registration status: {'Registered' if result else 'Unregistered'}")
             return result
         except Exception as e:
-            print(f"❌ 检查管理员注册状态异常: {str(e)}")
+            print(f"❌ Exception checking admin registration status: {str(e)}")
             return False
 
     def register_admin_as_user(self):
-        """注册管理员为系统用户"""
+        """Register administrator as system user"""
         try:
-            # 生成新的密钥对
+            # Generate new key pair
             keys = self.generate_keys()
             public_key_bytes = bytes.fromhex(keys['public_key'])
 
             admin_name = "System Administrator"
             admin_email = "admin@example.com"
 
-            print(f"注册管理员: {admin_name}, {admin_email}")
+            print(f"Registering admin: {admin_name}, {admin_email}")
 
-            # 构建交易
+            # Build transaction
             tx = self.main_contract.functions.registerUser(
                 admin_name,
                 admin_email,
                 public_key_bytes,
-                b''  # 空签名，因为默认管理员有自注册权限
+                b''  # Empty signature, as default admin has self-registration privileges
             ).build_transaction({
                 'from': self.admin_account.address,
                 'nonce': self.w3.eth.get_transaction_count(self.admin_account.address),
@@ -193,11 +194,11 @@ class BlockchainAuth:
                 'gasPrice': self.w3.eth.gas_price
             })
 
-            # 签名并发送交易
+            # Sign and send transaction
             signed_tx = self.w3.eth.account.sign_transaction(tx, self.admin_account.key)
             tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
 
-            # 等待交易确认
+            # Wait for transaction confirmation
             tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
 
             user_info = {
@@ -213,15 +214,15 @@ class BlockchainAuth:
             }
 
             if user_info['success']:
-                print(f"✅ 管理员注册成功")
+                print(f"✅ Admin registration successful")
                 self.test_users.append(user_info)
                 self.admin_users.append(user_info)
             else:
-                print(f"❌ 管理员注册失败")
+                print(f"❌ Admin registration failed")
 
             return user_info
         except Exception as e:
-            print(f"❌ 管理员注册异常: {str(e)}")
+            print(f"❌ Admin registration exception: {str(e)}")
             return {
                 'success': False,
                 'error': str(e),
@@ -229,7 +230,7 @@ class BlockchainAuth:
             }
 
     def generate_keys(self):
-        """生成公私钥对"""
+        """Generate public-private key pair"""
         private_key = self.w3.eth.account.create().key
         acct = Account.from_key(private_key)
         public_key = acct._key_obj.public_key.to_bytes()
@@ -241,14 +242,14 @@ class BlockchainAuth:
         }
 
     def create_new_accounts(self, count=3):
-        """创建新的以太坊账户并转入一些ETH"""
+        """Create new Ethereum accounts and transfer some ETH to them"""
         accounts = []
         for i in range(count):
-            # 创建新账户
+            # Create new account
             acct = Account.create()
-            print(f"创建新账户 #{i + 1}: {acct.address}")
+            print(f"Creating new account #{i + 1}: {acct.address}")
 
-            # 从主账户转账ETH
+            # Transfer ETH from main account
             tx = {
                 'to': acct.address,
                 'value': self.w3.to_wei(1, 'ether'),
@@ -260,9 +261,9 @@ class BlockchainAuth:
             tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
             self.w3.eth.wait_for_transaction_receipt(tx_hash)
 
-            # 检查新账户余额
+            # Check new account balance
             balance = self.w3.eth.get_balance(acct.address)
-            print(f"  账户余额: {self.w3.from_wei(balance, 'ether')} ETH")
+            print(f"  Account balance: {self.w3.from_wei(balance, 'ether')} ETH")
 
             accounts.append({
                 'address': acct.address,
@@ -274,20 +275,20 @@ class BlockchainAuth:
         return accounts
 
     def register_user_from_account(self, account, name, email):
-        """从指定账户注册用户"""
+        """Register user from specified account"""
         try:
-            # 生成新的密钥对
+            # Generate new key pair
             keys = self.generate_keys()
             public_key_bytes = bytes.fromhex(keys['public_key'])
 
-            print(f"从账户 {account['address']} 注册用户: {name}, {email}")
+            print(f"Registering user from account {account['address']}: {name}, {email}")
 
-            # 构建交易
+            # Build transaction
             tx = self.main_contract.functions.registerUser(
                 name,
                 email,
                 public_key_bytes,
-                b''  # 空签名
+                b''  # Empty signature
             ).build_transaction({
                 'from': account['address'],
                 'nonce': self.w3.eth.get_transaction_count(account['address']),
@@ -295,11 +296,11 @@ class BlockchainAuth:
                 'gasPrice': self.w3.eth.gas_price
             })
 
-            # 签名并发送交易
+            # Sign and send transaction
             signed_tx = self.w3.eth.account.sign_transaction(tx, account['private_key'])
             tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
 
-            # 等待交易确认
+            # Wait for transaction confirmation
             tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
 
             user_info = {
@@ -312,19 +313,19 @@ class BlockchainAuth:
                 'name': name,
                 'email': email,
                 'account': account,
-                'role': self.USER_ROLE["USER"]  # 默认为普通用户
+                'role': self.USER_ROLE["USER"]  # Default to regular user
             }
 
             if user_info['success']:
-                print(f"✅ 用户注册成功: {name}")
+                print(f"✅ User registration successful: {name}")
                 self.test_users.append(user_info)
                 self.regular_users.append(user_info)
             else:
-                print(f"❌ 用户注册失败: {name}")
+                print(f"❌ User registration failed: {name}")
 
             return user_info
         except Exception as e:
-            print(f"❌ 用户注册异常: {str(e)}")
+            print(f"❌ User registration exception: {str(e)}")
             return {
                 'success': False,
                 'error': str(e),
@@ -332,20 +333,20 @@ class BlockchainAuth:
             }
 
     def change_user_role(self, user_address, new_role):
-        """管理员修改用户角色"""
+        """Administrator changes user role"""
         try:
-            # 检查当前账户是否为系统管理员
+            # Check if current account is system administrator
             if self.admin_account.address.lower() != self.system_admin.lower():
-                print("❌ 当前账户不是系统管理员，无法修改用户角色")
+                print("❌ Current account is not system administrator, cannot change user role")
                 return {
                     'success': False,
                     'error': "Not system admin"
                 }
 
             role_text = self.get_role_text(new_role)
-            print(f"修改用户 {user_address} 角色为: {role_text}")
+            print(f"Changing user {user_address} role to: {role_text}")
 
-            # 构建交易
+            # Build transaction
             tx = self.user_manager_contract.functions.changeUserRole(
                 user_address,
                 new_role
@@ -356,11 +357,11 @@ class BlockchainAuth:
                 'gasPrice': self.w3.eth.gas_price
             })
 
-            # 签名并发送交易
+            # Sign and send transaction
             signed_tx = self.w3.eth.account.sign_transaction(tx, self.admin_account.key)
             tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
 
-            # 等待交易确认
+            # Wait for transaction confirmation
             tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
 
             result = {
@@ -372,14 +373,14 @@ class BlockchainAuth:
             }
 
             if result['success']:
-                print(f"✅ 用户角色修改成功")
+                print(f"✅ User role change successful")
 
-                # 更新测试用户列表中的角色
+                # Update role in test user list
                 for user in self.test_users:
                     if user['address'].lower() == user_address.lower():
                         user['role'] = new_role
 
-                        # 重新分类用户
+                        # Reclassify user
                         if new_role == self.USER_ROLE["NETWORK_ADMIN"]:
                             if user not in self.network_admin_users:
                                 self.network_admin_users.append(user)
@@ -394,11 +395,11 @@ class BlockchainAuth:
                                 self.regular_users.remove(user)
 
             else:
-                print(f"❌ 用户角色修改失败")
+                print(f"❌ User role change failed")
 
             return result
         except Exception as e:
-            print(f"❌ 修改用户角色异常: {str(e)}")
+            print(f"❌ Change user role exception: {str(e)}")
             return {
                 'success': False,
                 'error': str(e),
@@ -406,7 +407,7 @@ class BlockchainAuth:
             }
 
     def get_user_info(self, user_address):
-        """获取用户信息"""
+        """Get user information"""
         try:
             user_info = self.main_contract.functions.getUserInfo(user_address).call()
 
@@ -425,14 +426,14 @@ class BlockchainAuth:
 
             return result
         except Exception as e:
-            print(f"❌ 获取用户信息异常: {str(e)}")
+            print(f"❌ Get user info exception: {str(e)}")
             return {
                 'success': False,
                 'error': str(e)
             }
 
     def get_user_count(self):
-        """获取系统中的用户数量"""
+        """Get the number of users in the system"""
         try:
             count = self.main_contract.functions.getUserCount().call()
             return {
@@ -447,7 +448,7 @@ class BlockchainAuth:
             }
 
     def get_user_list(self, offset, limit):
-        """获取用户列表"""
+        """Get user list"""
         try:
             result = self.main_contract.functions.getUserList(offset, limit).call()
             return {
@@ -464,29 +465,29 @@ class BlockchainAuth:
             }
 
     def update_user_info(self, account, name, email, public_key=None):
-        """更新用户信息"""
+        """Update user information"""
         try:
-            print(f"更新用户 {account['address']} 信息: {name}, {email}")
+            print(f"Updating user {account['address']} information: {name}, {email}")
 
-            # 先检查用户是否已注册且活跃
+            # First check if user is registered and active
             user_check = self.get_user_info(account['address'])
             if not user_check['success']:
-                print(f"❌ 无法获取用户信息，可能用户未注册")
+                print(f"❌ Unable to get user information, user may not be registered")
                 return {
                     'success': False,
                     'error': "User not registered"
                 }
 
             if not user_check['is_active']:
-                print(f"❌ 用户已停用，无法更新信息")
+                print(f"❌ User is deactivated, cannot update information")
                 return {
                     'success': False,
                     'error': "User is not active"
                 }
 
-            print(f"✅ 用户已注册且活跃，继续更新信息")
+            print(f"✅ User is registered and active, continuing with update")
 
-            # 如果提供了新公钥，使用新公钥；否则使用空字节
+            # If new public key is provided, use it; otherwise use empty bytes
             if public_key:
                 if isinstance(public_key, str):
                     if public_key.startswith('0x'):
@@ -498,15 +499,15 @@ class BlockchainAuth:
             else:
                 public_key_bytes = b''
 
-            # 确保私钥正确
+            # Ensure private key is correct
             if 'private_key' not in account:
-                print(f"❌ 账户对象中没有私钥")
+                print(f"❌ No private key in account object")
                 return {
                     'success': False,
                     'error': "Account object missing private key"
                 }
 
-            # 构建交易
+            # Build transaction
             tx = self.main_contract.functions.updateUserInfo(
                 name,
                 email,
@@ -518,12 +519,12 @@ class BlockchainAuth:
                 'gasPrice': self.w3.eth.gas_price
             })
 
-            # 签名并发送交易
+            # Sign and send transaction
             try:
                 signed_tx = self.w3.eth.account.sign_transaction(tx, account['private_key'])
                 tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
 
-                # 等待交易确认
+                # Wait for transaction confirmation
                 tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
 
                 result = {
@@ -535,9 +536,9 @@ class BlockchainAuth:
                 }
 
                 if result['success']:
-                    print(f"✅ 用户信息更新成功")
+                    print(f"✅ User information update successful")
 
-                    # 更新测试用户列表中的信息
+                    # Update test user list information
                     for user in self.test_users:
                         if user['address'].lower() == account['address'].lower():
                             user['name'] = name
@@ -548,18 +549,18 @@ class BlockchainAuth:
                                 else:
                                     user['public_key'] = public_key.hex()
                 else:
-                    print(f"❌ 用户信息更新失败")
+                    print(f"❌ User information update failed")
 
                 return result
             except Exception as tx_error:
-                print(f"❌ 交易执行出错: {str(tx_error)}")
+                print(f"❌ Transaction execution error: {str(tx_error)}")
                 return {
                     'success': False,
                     'error': str(tx_error),
                     'traceback': traceback.format_exc()
                 }
         except Exception as e:
-            print(f"❌ 更新用户信息异常: {str(e)}")
+            print(f"❌ Update user info exception: {str(e)}")
             return {
                 'success': False,
                 'error': str(e),
@@ -567,11 +568,11 @@ class BlockchainAuth:
             }
 
     def deactivate_user(self, account):
-        """停用用户账户"""
+        """Deactivate user account"""
         try:
-            print(f"停用用户账户: {account['address']}")
+            print(f"Deactivating user account: {account['address']}")
 
-            # 构建交易
+            # Build transaction
             tx = self.main_contract.functions.deactivateUser().build_transaction({
                 'from': account['address'],
                 'nonce': self.w3.eth.get_transaction_count(account['address']),
@@ -579,11 +580,11 @@ class BlockchainAuth:
                 'gasPrice': self.w3.eth.gas_price
             })
 
-            # 签名并发送交易
+            # Sign and send transaction
             signed_tx = self.w3.eth.account.sign_transaction(tx, account['private_key'])
             tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
 
-            # 等待交易确认
+            # Wait for transaction confirmation
             tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
 
             result = {
@@ -593,18 +594,18 @@ class BlockchainAuth:
             }
 
             if result['success']:
-                print(f"✅ 用户账户成功停用")
+                print(f"✅ User account successfully deactivated")
 
-                # 更新测试用户状态
+                # Update test user status
                 for user in self.test_users:
                     if user['address'].lower() == account['address'].lower():
                         user['is_active'] = False
             else:
-                print(f"❌ 用户账户停用失败")
+                print(f"❌ User account deactivation failed")
 
             return result
         except Exception as e:
-            print(f"❌ 停用用户账户异常: {str(e)}")
+            print(f"❌ Deactivate user account exception: {str(e)}")
             return {
                 'success': False,
                 'error': str(e),
@@ -612,11 +613,11 @@ class BlockchainAuth:
             }
 
     def generate_login_challenge(self, user_address):
-        """生成用户登录挑战"""
+        """Generate user login challenge"""
         try:
-            print(f"为用户 {user_address} 生成登录挑战...")
+            print(f"Generating login challenge for user {user_address}...")
 
-            # 构建交易
+            # Build transaction
             tx = self.user_manager_contract.functions.generateLoginChallenge(
                 user_address
             ).build_transaction({
@@ -626,31 +627,31 @@ class BlockchainAuth:
                 'gasPrice': self.w3.eth.gas_price
             })
 
-            # 签名并发送交易
+            # Sign and send transaction
             signed_tx = self.w3.eth.account.sign_transaction(tx, self.admin_account.key)
             tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
 
-            # 等待交易确认
+            # Wait for transaction confirmation
             tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
 
-            # 尝试从事件中获取挑战值
+            # Try to get challenge value from events
             challenge = None
             expires_at = None
 
             if tx_receipt.status == 1:
                 try:
-                    # 解析事件获取挑战值
+                    # Parse event to get challenge value
                     event_filter = self.user_manager_contract.events.LoginChallengeGenerated().process_receipt(
                         tx_receipt)
                     if event_filter and len(event_filter) > 0:
                         for evt in event_filter:
                             challenge = self.w3.to_hex(evt['args']['challenge'])
                             expires_at = evt['args']['expiresAt']
-                            print(f"从事件中获取挑战值: {challenge}")
-                            print(f"挑战过期时间: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(expires_at))}")
+                            print(f"Challenge value from event: {challenge}")
+                            print(f"Challenge expiration time: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(expires_at))}")
                 except Exception as e:
-                    print(f"解析挑战事件异常: {str(e)}")
-                    # 可能需要通过其他方式获取挑战值
+                    print(f"Exception parsing challenge event: {str(e)}")
+                    # May need to get challenge value another way
                     challenge = None
                     expires_at = None
 
@@ -662,13 +663,13 @@ class BlockchainAuth:
             }
 
             if result['success']:
-                print(f"✅ 登录挑战生成成功")
+                print(f"✅ Login challenge generated successfully")
             else:
-                print(f"❌ 登录挑战生成失败或无法获取挑战值")
+                print(f"❌ Login challenge generation failed or unable to get challenge value")
 
             return result
         except Exception as e:
-            print(f"❌ 生成登录挑战异常: {str(e)}")
+            print(f"❌ Generate login challenge exception: {str(e)}")
             return {
                 'success': False,
                 'error': str(e),
@@ -676,15 +677,15 @@ class BlockchainAuth:
             }
 
     def sign_login_challenge(self, private_key_hex, user_address, challenge):
-        """使用私钥签名登录挑战"""
+        """Sign login challenge using private key"""
         try:
-            # 确保私钥格式正确
+            # Ensure private key format is correct
             if not private_key_hex.startswith('0x'):
                 private_key = f"0x{private_key_hex}"
             else:
                 private_key = private_key_hex
 
-            # 确保challenge是bytes32格式
+            # Ensure challenge is in bytes32 format
             if challenge.startswith('0x'):
                 challenge_bytes = bytes.fromhex(challenge[2:])
             else:
@@ -692,38 +693,38 @@ class BlockchainAuth:
 
             user_address_bytes = Web3.to_bytes(hexstr=user_address)
 
-            # 构建消息哈希 - 按照合约中的逻辑
+            # Build message hash - following contract logic
             message_bytes = user_address_bytes + challenge_bytes
             message_hash = Web3.keccak(message_bytes)
 
-            # 创建以太坊签名消息
+            # Create Ethereum signature message
             eth_message = encode_defunct(primitive=message_hash)
 
-            # 使用私钥签名
+            # Sign with private key
             account = Account.from_key(private_key)
             signed_message = account.sign_message(eth_message)
 
-            # 返回签名结果
+            # Return signature result
             signature = signed_message.signature.hex()
-            print(f"✅ 成功签名登录挑战: {signature[:20]}...")
+            print(f"✅ Successfully signed login challenge: {signature[:20]}...")
             return signature
         except Exception as e:
-            print(f"❌ 签名登录挑战异常: {str(e)}")
+            print(f"❌ Sign login challenge exception: {str(e)}")
             print(traceback.format_exc())
             return ""
 
     def verify_login(self, user_address, challenge, signature):
-        """验证用户登录"""
+        """Verify user login"""
         try:
-            print(f"验证用户 {user_address} 的登录...")
+            print(f"Verifying login for user {user_address}...")
 
-            # 将签名转换为bytes
+            # Convert signature to bytes
             if signature.startswith('0x'):
                 signature_bytes = self.w3.to_bytes(hexstr=signature)
             else:
                 signature_bytes = bytes.fromhex(signature)
 
-            # 调用合约验证登录
+            # Call contract to verify login
             tx = self.user_manager_contract.functions.verifyLogin(
                 user_address,
                 self.w3.to_bytes(hexstr=challenge) if challenge.startswith('0x') else self.w3.to_bytes(text=challenge),
@@ -735,38 +736,38 @@ class BlockchainAuth:
                 'gasPrice': self.w3.eth.gas_price
             })
 
-            # 签名并发送交易
+            # Sign and send transaction
             signed_tx = self.w3.eth.account.sign_transaction(tx, self.admin_account.key)
             tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
 
-            # 等待交易确认
+            # Wait for transaction confirmation
             tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
 
-            # 尝试从事件中获取登录结果
+            # Try to get login result from events
             login_success = False
             user_role = None
 
             if tx_receipt.status == 1:
                 try:
-                    # 检查LoginSuccess事件
+                    # Check for LoginSuccess event
                     success_events = self.user_manager_contract.events.LoginSuccess().process_receipt(tx_receipt)
                     if success_events and len(success_events) > 0:
                         login_success = True
-                        print(f"检测到成功登录事件")
+                        print(f"Login success event detected")
 
-                    # 也可以检查LoginFailed事件
+                    # Can also check for LoginFailed event
                     failed_events = self.user_manager_contract.events.LoginFailed().process_receipt(tx_receipt)
                     if failed_events and len(failed_events) > 0:
                         login_success = False
-                        print(f"检测到登录失败事件")
+                        print(f"Login failed event detected")
 
-                    # 尝试从函数返回值获取用户角色
-                    # 这可能需要改为调用view函数，因为在交易结果中获取返回值比较困难
+                    # Try to get user role from function return value
+                    # This might need to be changed to call a view function, as getting return values from transactions is difficult
                     user_info = self.get_user_info(user_address)
                     if user_info['success']:
                         user_role = user_info['role']
                 except Exception as e:
-                    print(f"解析登录事件异常: {str(e)}")
+                    print(f"Exception parsing login events: {str(e)}")
 
             result = {
                 'success': tx_receipt.status == 1,
@@ -776,14 +777,14 @@ class BlockchainAuth:
             }
 
             if result['success'] and login_success:
-                print(f"✅ 用户登录验证成功")
-                print(f"  用户角色: {self.get_role_text(user_role)}")
+                print(f"✅ User login verification successful")
+                print(f"  User role: {self.get_role_text(user_role)}")
             else:
-                print(f"❌ 用户登录验证失败")
+                print(f"❌ User login verification failed")
 
             return result
         except Exception as e:
-            print(f"❌ 验证登录异常: {str(e)}")
+            print(f"❌ Verify login exception: {str(e)}")
             return {
                 'success': False,
                 'error': str(e),
@@ -791,21 +792,21 @@ class BlockchainAuth:
             }
 
     def create_network(self, name, owner_account=None):
-        """创建新无线网络"""
+        """Create new wireless network"""
         try:
-            # 生成网络ID
+            # Generate network ID
             network_id = f"net:{uuid.uuid4()}"
-            # 转换为bytes32
+            # Convert to bytes32
             network_id_hash = hashlib.sha256(network_id.encode()).digest()
             network_id_bytes32 = "0x" + network_id_hash.hex()
 
-            # 如果未指定所有者，使用管理员账户
+            # If owner not specified, use admin account
             if owner_account is None:
                 owner_account = {'address': self.admin_account.address, 'private_key': self.admin_account.key.hex()}
 
-            print(f"创建新网络: {name}, ID: {network_id}")
+            print(f"Creating new network: {name}, ID: {network_id}")
 
-            # 构建交易
+            # Build transaction
             tx = self.main_contract.functions.createNetwork(
                 self.w3.to_bytes(hexstr=network_id_bytes32),
                 name
@@ -816,11 +817,11 @@ class BlockchainAuth:
                 'gasPrice': self.w3.eth.gas_price
             })
 
-            # 签名并发送交易
+            # Sign and send transaction
             signed_tx = self.w3.eth.account.sign_transaction(tx, owner_account['private_key'])
             tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
 
-            # 等待交易确认
+            # Wait for transaction confirmation
             tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
 
             network_info = {
@@ -834,14 +835,14 @@ class BlockchainAuth:
             }
 
             if network_info['success']:
-                print(f"✅ 网络创建成功: {name}")
+                print(f"✅ Network created successfully: {name}")
                 self.test_networks.append(network_info)
             else:
-                print(f"❌ 网络创建失败: {name}")
+                print(f"❌ Network creation failed: {name}")
 
             return network_info
         except Exception as e:
-            print(f"❌ 网络创建异常: {str(e)}")
+            print(f"❌ Network creation exception: {str(e)}")
             return {
                 'success': False,
                 'error': str(e),
@@ -849,13 +850,13 @@ class BlockchainAuth:
             }
 
     def create_did(self, device_type):
-        """创建设备ID (DID)"""
+        """Create device ID (DID)"""
         uuid_val = str(uuid.uuid4())
-        # 创建DID
+        # Create DID
         did = f"did:identity-chain:{uuid_val}"
-        # 使用SHA-256确保得到32字节长度
+        # Use SHA-256 to ensure 32-byte length
         did_hash = hashlib.sha256(did.encode()).digest()
-        # 将设备类型转换为bytes32
+        # Convert device type to bytes32
         device_type_bytes = self.w3.to_bytes(text=device_type).ljust(32, b'\0')
         device_type_hex = self.w3.to_hex(device_type_bytes)
 
@@ -866,29 +867,28 @@ class BlockchainAuth:
         }
 
     def register_device(self, device_type, name, owner_account):
-        """注册设备"""
+        """Register device"""
         try:
-            # 创建设备ID
+            # Create device ID
             did_info = self.create_did(device_type)
 
-            # 生成密钥对
+            # Generate key pair
             keys = self.generate_keys()
             public_key_bytes = bytes.fromhex(keys['public_key'])
 
-            # 创建元数据
+            # Create metadata
             metadata = f"metadata_{uuid.uuid4().hex[:8]}"
             metadata_bytes32 = self.w3.to_bytes(text=metadata).ljust(32, b'\0')
 
-            print(f"为用户 {owner_account['address']} 注册设备: {name}, 类型: {device_type}")
+            print(f"Registering device for user {owner_account['address']}: {name}, type: {device_type}")
 
-            # 构建交易
+            # Build transaction
             tx = self.main_contract.functions.registerDevice(
                 self.w3.to_bytes(text=device_type).ljust(32, b'\0'),
                 self.w3.to_bytes(hexstr=did_info['did_bytes32']),
                 public_key_bytes,
                 name,
-                metadata_bytes32,
-                b''  # 空签名
+                metadata_bytes32
             ).build_transaction({
                 'from': owner_account['address'],
                 'nonce': self.w3.eth.get_transaction_count(owner_account['address']),
@@ -896,11 +896,11 @@ class BlockchainAuth:
                 'gasPrice': self.w3.eth.gas_price
             })
 
-            # 签名并发送交易
+            # Sign and send transaction
             signed_tx = self.w3.eth.account.sign_transaction(tx, owner_account['private_key'])
             tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
 
-            # 等待交易确认
+            # Wait for transaction confirmation
             tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
 
             device_info = {
@@ -917,14 +917,14 @@ class BlockchainAuth:
             }
 
             if device_info['success']:
-                print(f"✅ 设备注册成功: {name}")
+                print(f"✅ Device registration successful: {name}")
                 self.test_devices.append(device_info)
             else:
-                print(f"❌ 设备注册失败: {name}")
+                print(f"❌ Device registration failed: {name}")
 
             return device_info
         except Exception as e:
-            print(f"❌ 设备注册异常: {str(e)}")
+            print(f"❌ Device registration exception: {str(e)}")
             return {
                 'success': False,
                 'error': str(e),
@@ -932,14 +932,14 @@ class BlockchainAuth:
             }
 
     def grant_network_access(self, did_bytes32, network_id_bytes32, admin_account=None):
-        """授予设备访问网络的权限"""
+        """Grant device access to network"""
         try:
             if admin_account is None:
                 admin_account = {'address': self.admin_account.address, 'private_key': self.admin_account.key.hex()}
 
-            print(f"授予设备 {did_bytes32} 访问网络 {network_id_bytes32} 的权限")
+            print(f"Granting device {did_bytes32} access to network {network_id_bytes32}")
 
-            # 构建交易
+            # Build transaction
             tx = self.main_contract.functions.grantAccess(
                 self.w3.to_bytes(hexstr=did_bytes32),
                 self.w3.to_bytes(hexstr=network_id_bytes32)
@@ -950,11 +950,11 @@ class BlockchainAuth:
                 'gasPrice': self.w3.eth.gas_price
             })
 
-            # 签名并发送交易
+            # Sign and send transaction
             signed_tx = self.w3.eth.account.sign_transaction(tx, admin_account['private_key'])
             tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
 
-            # 等待交易确认
+            # Wait for transaction confirmation
             tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
 
             result = {
@@ -964,13 +964,13 @@ class BlockchainAuth:
             }
 
             if result['success']:
-                print(f"✅ 成功授予访问权限")
+                print(f"✅ Access grant successful")
             else:
-                print(f"❌ 授予访问权限失败")
+                print(f"❌ Access grant failed")
 
             return result
         except Exception as e:
-            print(f"❌ 授予访问权限异常: {str(e)}")
+            print(f"❌ Grant access exception: {str(e)}")
             return {
                 'success': False,
                 'error': str(e),
@@ -978,7 +978,7 @@ class BlockchainAuth:
             }
 
     def check_network_access(self, did_bytes32, network_id_bytes32):
-        """检查设备是否有权访问网络"""
+        """Check if device has access to network"""
         try:
             result = self.main_contract.functions.checkAccess(
                 self.w3.to_bytes(hexstr=did_bytes32),
@@ -997,36 +997,36 @@ class BlockchainAuth:
             }
 
     def batch_grant_access(self, did_list, network_id_bytes32):
-        """批量授予多个设备访问网络的权限"""
+        """Batch grant multiple devices access to network"""
         try:
-            # 将DID列表转换为bytes32列表
+            # Convert DID list to bytes32 list
             did_bytes32_list = [self.w3.to_bytes(hexstr=did) for did in did_list]
 
-            print(f"批量授予 {len(did_list)} 个设备访问网络的权限")
+            print(f"Batch granting {len(did_list)} devices access to network")
 
-            # 构建交易
+            # Build transaction
             tx = self.main_contract.functions.batchGrantAccess(
                 did_bytes32_list,
                 self.w3.to_bytes(hexstr=network_id_bytes32)
             ).build_transaction({
                 'from': self.admin_account.address,
                 'nonce': self.w3.eth.get_transaction_count(self.admin_account.address),
-                'gas': 2000000,  # 批量操作可能需要更多gas
+                'gas': 2000000,  # Batch operations may need more gas
                 'gasPrice': self.w3.eth.gas_price
             })
 
-            # 签名并发送交易
+            # Sign and send transaction
             signed_tx = self.w3.eth.account.sign_transaction(tx, self.admin_account.key)
             tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
 
-            # 等待交易确认
+            # Wait for transaction confirmation
             tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
 
-            # 尝试获取返回的成功计数
+            # Try to get the success count from return
             success_count = 0
             if tx_receipt.status == 1:
-                # 这里可能需要从事件日志中解析成功计数
-                success_count = len(did_list)  # 假设全部成功
+                # May need to parse this from event logs
+                success_count = len(did_list)  # Assume all successful
 
             result = {
                 'success': tx_receipt.status == 1,
@@ -1036,13 +1036,13 @@ class BlockchainAuth:
             }
 
             if result['success']:
-                print(f"✅ 批量授权成功: {success_count} 个设备")
+                print(f"✅ Batch authorization successful: {success_count} devices")
             else:
-                print(f"❌ 批量授权失败")
+                print(f"❌ Batch authorization failed")
 
             return result
         except Exception as e:
-            print(f"❌ 批量授权异常: {str(e)}")
+            print(f"❌ Batch authorization exception: {str(e)}")
             return {
                 'success': False,
                 'error': str(e),
@@ -1050,14 +1050,14 @@ class BlockchainAuth:
             }
 
     def get_owner_networks(self, owner_address=None):
-        """获取用户所拥有的网络列表"""
+        """Get list of networks owned by a user"""
         try:
             if owner_address is None:
                 owner_address = self.admin_account.address
 
             networks = self.main_contract.functions.getOwnerNetworks(owner_address).call()
 
-            # 转换为可读格式
+            # Convert to readable format
             network_list = [self.w3.to_hex(nid) for nid in networks]
 
             return {
@@ -1074,31 +1074,31 @@ class BlockchainAuth:
             }
 
     def deactivate_device(self, device_info, account=None):
-        """停用设备
+        """Deactivate device
 
         Args:
-            device_info: 包含设备信息的字典
-            account: 执行停用操作的账户（默认为设备所有者）
+            device_info: Dictionary containing device information
+            account: Account to execute deactivation (defaults to device owner)
 
         Returns:
-            包含操作结果的字典
+            Dictionary containing operation result
         """
         try:
-            # 如果未指定账户，默认使用设备所有者的账户
+            # If account not specified, default to device owner's account
             if account is None:
-                # 查找拥有此设备的测试账户
+                # Find test account that owns this device
                 owner_address = device_info['owner']
                 account = next((acc for acc in self.test_accounts if acc['address'] == owner_address), None)
 
-                # 如果找不到对应账户，使用管理员账户
+                # If owner account not found, use admin account
                 if account is None:
                     account = {'address': self.admin_account.address, 'private_key': self.admin_account.key.hex()}
-                    print(f"未找到设备所有者账户，使用管理员账户停用设备")
+                    print(f"Device owner account not found, using admin account to deactivate device")
 
-            print(f"停用设备: {device_info['name']} (DID: {device_info['did']})")
-            print(f"执行账户: {account['address']}")
+            print(f"Deactivating device: {device_info['name']} (DID: {device_info['did']})")
+            print(f"Executing account: {account['address']}")
 
-            # 构建交易
+            # Build transaction
             tx = self.main_contract.functions.deactivateDevice(
                 self.w3.to_bytes(hexstr=device_info['did_bytes32'])
             ).build_transaction({
@@ -1108,11 +1108,11 @@ class BlockchainAuth:
                 'gasPrice': self.w3.eth.gas_price
             })
 
-            # 签名并发送交易
+            # Sign and send transaction
             signed_tx = self.w3.eth.account.sign_transaction(tx, account['private_key'])
             tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
 
-            # 等待交易确认
+            # Wait for transaction confirmation
             tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
 
             result = {
@@ -1122,13 +1122,13 @@ class BlockchainAuth:
             }
 
             if result['success']:
-                print(f"✅ 设备 {device_info['name']} 停用成功")
+                print(f"✅ Device {device_info['name']} deactivation successful")
             else:
-                print(f"❌ 设备 {device_info['name']} 停用失败")
+                print(f"❌ Device {device_info['name']} deactivation failed")
 
             return result
         except Exception as e:
-            print(f"❌ 设备停用异常: {str(e)}")
+            print(f"❌ Device deactivation exception: {str(e)}")
             return {
                 'success': False,
                 'error': str(e),
@@ -1136,7 +1136,7 @@ class BlockchainAuth:
             }
 
     def get_device_info(self, did_bytes32):
-        """获取设备信息"""
+        """Get device information"""
         try:
             result = self.main_contract.functions.getDeviceInfo(
                 self.w3.to_bytes(hexstr=did_bytes32)
@@ -1161,11 +1161,11 @@ class BlockchainAuth:
             }
 
     def revoke_network_access(self, did_bytes32, network_id_bytes32):
-        """撤销设备访问网络的权限"""
+        """Revoke device access to network"""
         try:
-            print(f"撤销设备 {did_bytes32} 访问网络 {network_id_bytes32} 的权限")
+            print(f"Revoking device {did_bytes32} access to network {network_id_bytes32}")
 
-            # 构建交易
+            # Build transaction
             tx = self.main_contract.functions.revokeAccess(
                 self.w3.to_bytes(hexstr=did_bytes32),
                 self.w3.to_bytes(hexstr=network_id_bytes32)
@@ -1176,11 +1176,11 @@ class BlockchainAuth:
                 'gasPrice': self.w3.eth.gas_price
             })
 
-            # 签名并发送交易
+            # Sign and send transaction
             signed_tx = self.w3.eth.account.sign_transaction(tx, self.admin_account.key)
             tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
 
-            # 等待交易确认
+            # Wait for transaction confirmation
             tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
 
             result = {
@@ -1190,13 +1190,13 @@ class BlockchainAuth:
             }
 
             if result['success']:
-                print(f"✅ 成功撤销访问权限")
+                print(f"✅ Access revocation successful")
             else:
-                print(f"❌ 撤销访问权限失败")
+                print(f"❌ Access revocation failed")
 
             return result
         except Exception as e:
-            print(f"❌ 撤销访问权限异常: {str(e)}")
+            print(f"❌ Revoke access exception: {str(e)}")
             return {
                 'success': False,
                 'error': str(e),
@@ -1204,11 +1204,11 @@ class BlockchainAuth:
             }
 
     def generate_auth_challenge(self, did_bytes32, network_id_bytes32):
-        """生成设备认证挑战"""
+        """Generate device authentication challenge"""
         try:
-            print(f"为设备 {did_bytes32} 生成认证挑战...")
+            print(f"Generating authentication challenge for device {did_bytes32}...")
 
-            # 构建交易
+            # Build transaction
             tx = self.main_contract.functions.generateAuthChallenge(
                 self.w3.to_bytes(hexstr=did_bytes32),
                 self.w3.to_bytes(hexstr=network_id_bytes32)
@@ -1219,23 +1219,23 @@ class BlockchainAuth:
                 'gasPrice': self.w3.eth.gas_price
             })
 
-            # 签名并发送交易
+            # Sign and send transaction
             signed_tx = self.w3.eth.account.sign_transaction(tx, self.admin_account.key)
             tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
 
-            # 等待交易确认
+            # Wait for transaction confirmation
             tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
 
-            # 获取挑战值，需要额外调用getLatestChallenge
+            # Get challenge value, needs additional call to getLatestChallenge
             challenge_result = self.get_latest_challenge(did_bytes32)
 
             if challenge_result['success']:
-                print(f"✅ 成功生成认证挑战")
-                print(f"  挑战值: {challenge_result['challenge']}")
+                print(f"✅ Authentication challenge generated successfully")
+                print(f"  Challenge value: {challenge_result['challenge']}")
                 print(
-                    f"  过期时间: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(challenge_result['expires_at']))}")
+                    f"  Expiration time: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(challenge_result['expires_at']))}")
             else:
-                print(f"❌ 生成认证挑战失败")
+                print(f"❌ Authentication challenge generation failed")
 
             return {
                 'success': tx_receipt.status == 1 and challenge_result['success'],
@@ -1244,7 +1244,7 @@ class BlockchainAuth:
                 'expires_at': challenge_result.get('expires_at')
             }
         except Exception as e:
-            print(f"❌ 生成认证挑战异常: {str(e)}")
+            print(f"❌ Generate authentication challenge exception: {str(e)}")
             return {
                 'success': False,
                 'error': str(e),
@@ -1252,7 +1252,7 @@ class BlockchainAuth:
             }
 
     def get_latest_challenge(self, did_bytes32):
-        """获取设备的最新挑战值"""
+        """Get device's latest challenge value"""
         try:
             result = self.main_contract.functions.getLatestChallenge(
                 self.w3.to_bytes(hexstr=did_bytes32)
@@ -1271,61 +1271,61 @@ class BlockchainAuth:
             }
 
     def sign_challenge(self, private_key_hex, did_bytes32, challenge):
-        """使用私钥签名挑战"""
+        """Sign challenge using private key"""
         try:
-            # 确保私钥格式正确
+            # Ensure private key format is correct
             if not private_key_hex.startswith('0x'):
                 private_key = f"0x{private_key_hex}"
             else:
                 private_key = private_key_hex
 
-            # 确保DID是bytes32格式
+            # Ensure DID is in bytes32 format
             if did_bytes32.startswith('0x'):
                 did_bytes = bytes.fromhex(did_bytes32[2:])
             else:
                 did_bytes = bytes.fromhex(did_bytes32)
 
-            # 确保challenge是bytes32格式
+            # Ensure challenge is in bytes32 format
             if challenge.startswith('0x'):
                 challenge_bytes = bytes.fromhex(challenge[2:])
             else:
                 challenge_bytes = bytes.fromhex(challenge)
 
-            # 按照合约中的逻辑构建消息哈希
-            # 首先拼接DID和挑战值
+            # Build message hash according to contract logic
+            # First concatenate DID and challenge value
             message_bytes = did_bytes + challenge_bytes
-            # 计算keccak256哈希
+            # Calculate keccak256 hash
             message_hash = Web3.keccak(message_bytes)
 
-            # 创建以太坊签名消息
+            # Create Ethereum signature message
             from eth_account.messages import encode_defunct
             eth_message = encode_defunct(primitive=message_hash)
 
-            # 使用私钥签名
+            # Sign with private key
             account = Account.from_key(private_key)
             signed_message = account.sign_message(eth_message)
 
-            # 返回签名结果
+            # Return signature result
             signature = signed_message.signature.hex()
-            print(f"✅ 成功签名挑战: {signature[:20]}...")
+            print(f"✅ Successfully signed challenge: {signature[:20]}...")
             return signature
         except Exception as e:
-            print(f"❌ 签名挑战异常: {str(e)}")
+            print(f"❌ Sign challenge exception: {str(e)}")
             print(traceback.format_exc())
             return ""
 
     def authenticate(self, did_bytes32, network_id_bytes32, challenge, signature):
-        """验证设备并获取访问令牌"""
+        """Authenticate device and get access token"""
         try:
-            print(f"验证设备 {did_bytes32} 的认证...")
+            print(f"Authenticating device {did_bytes32}...")
 
-            # 将签名转换为bytes
+            # Convert signature to bytes
             if signature.startswith('0x'):
                 signature_bytes = self.w3.to_bytes(hexstr=signature)
             else:
                 signature_bytes = bytes.fromhex(signature)
 
-            # 构建交易
+            # Build transaction
             tx = self.main_contract.functions.authenticate(
                 self.w3.to_bytes(hexstr=did_bytes32),
                 self.w3.to_bytes(hexstr=network_id_bytes32),
@@ -1338,34 +1338,34 @@ class BlockchainAuth:
                 'gasPrice': self.w3.eth.gas_price
             })
 
-            # 签名并发送交易
+            # Sign and send transaction
             signed_tx = self.w3.eth.account.sign_transaction(tx, self.admin_account.key)
             tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
 
-            # 等待交易确认
+            # Wait for transaction confirmation
             tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
 
-            # 尝试从事件中获取令牌ID
+            # Try to get token ID from events
             token_id = None
-            # 创建包含TokenIssued事件的过滤器
+            # Create filter for TokenIssued event
             if tx_receipt.status == 1:
                 try:
-                    # 这里我们尝试获取TokenIssued事件
+                    # Try to get TokenIssued event
                     event_filter = self.main_contract.events.TokenIssued().process_receipt(tx_receipt)
                     if event_filter and len(event_filter) > 0:
                         for evt in event_filter:
                             token_id = self.w3.to_hex(evt['args']['tokenId'])
-                            print(f"从事件中获取令牌ID: {token_id}")
+                            print(f"Token ID from event: {token_id}")
                 except Exception as e:
-                    print(f"获取令牌事件异常: {str(e)}")
-                    # 用返回值作为备选
+                    print(f"Get token event exception: {str(e)}")
+                    # Try return value as fallback
                     try:
-                        # 尝试从交易返回值获取tokenId
-                        # 这需要通过监听函数返回值，不一定能成功
+                        # Try to get tokenId from transaction return value
+                        # This requires listening to function return value, may not succeed
                         token_id = self.w3.to_hex(Web3.to_bytes(hexstr=tx_receipt.logs[0].data))
-                        print(f"从日志数据获取令牌ID: {token_id}")
+                        print(f"Token ID from log data: {token_id}")
                     except:
-                        print("无法从日志获取令牌ID")
+                        print("Unable to get token ID from logs")
 
             result = {
                 'success': tx_receipt.status == 1,
@@ -1375,10 +1375,10 @@ class BlockchainAuth:
             }
 
             if result['success']:
-                print(f"✅ 设备认证成功")
+                print(f"✅ Device authentication successful")
                 if token_id:
-                    print(f"  获得令牌ID: {token_id}")
-                    # 存储令牌信息，供后续测试使用
+                    print(f"  Token ID received: {token_id}")
+                    # Store token info for later testing
                     self.test_tokens.append({
                         'token_id': token_id,
                         'did_bytes32': did_bytes32,
@@ -1386,13 +1386,13 @@ class BlockchainAuth:
                         'issued_at': int(time.time())
                     })
                 else:
-                    print("⚠️ 认证成功但未获取到令牌ID")
+                    print("⚠️ Authentication successful but no token ID received")
             else:
-                print(f"❌ 设备认证失败")
+                print(f"❌ Device authentication failed")
 
             return result
         except Exception as e:
-            print(f"❌ 认证异常: {str(e)}")
+            print(f"❌ Authentication exception: {str(e)}")
             return {
                 'success': False,
                 'error': str(e),
@@ -1400,25 +1400,25 @@ class BlockchainAuth:
             }
 
     def validate_token(self, token_id):
-        """验证访问令牌有效性"""
+        """Validate access token validity"""
         try:
-            print(f"验证令牌 {token_id} 的有效性...")
+            print(f"Validating token {token_id}...")
 
             result = self.main_contract.functions.validateToken(
                 self.w3.to_bytes(hexstr=token_id)
             ).call()
 
             if result:
-                print(f"✅ 令牌有效")
+                print(f"✅ Token is valid")
             else:
-                print(f"❌ 令牌无效")
+                print(f"❌ Token is invalid")
 
             return {
                 'success': True,
                 'valid': result
             }
         except Exception as e:
-            print(f"❌ 验证令牌异常: {str(e)}")
+            print(f"❌ Validate token exception: {str(e)}")
             return {
                 'success': False,
                 'error': str(e),
@@ -1426,11 +1426,11 @@ class BlockchainAuth:
             }
 
     def revoke_token(self, token_id):
-        """撤销访问令牌"""
+        """Revoke access token"""
         try:
-            print(f"撤销令牌 {token_id}...")
+            print(f"Revoking token {token_id}...")
 
-            # 构建交易
+            # Build transaction
             tx = self.main_contract.functions.revokeToken(
                 self.w3.to_bytes(hexstr=token_id)
             ).build_transaction({
@@ -1440,11 +1440,11 @@ class BlockchainAuth:
                 'gasPrice': self.w3.eth.gas_price
             })
 
-            # 签名并发送交易
+            # Sign and send transaction
             signed_tx = self.w3.eth.account.sign_transaction(tx, self.admin_account.key)
             tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
 
-            # 等待交易确认
+            # Wait for transaction confirmation
             tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
 
             result = {
@@ -1454,30 +1454,30 @@ class BlockchainAuth:
             }
 
             if result['success']:
-                print(f"✅ 令牌成功撤销")
+                print(f"✅ Token successfully revoked")
             else:
-                print(f"❌ 令牌撤销失败")
+                print(f"❌ Token revocation failed")
 
             return result
         except Exception as e:
-            print(f"❌ 撤销令牌异常: {str(e)}")
+            print(f"❌ Revoke token exception: {str(e)}")
 
     def get_auth_logs(self, did_bytes32):
-        """获取设备认证日志"""
+        """Get device authentication logs"""
         try:
-            print(f"获取设备 {did_bytes32} 的认证日志...")
+            print(f"Getting authentication logs for device {did_bytes32}...")
 
-            # 获取日志数量
+            # Get log count
             log_count = self.main_contract.functions.getAuthLogCount(
                 self.w3.to_bytes(hexstr=did_bytes32)
             ).call()
 
-            print(f"  发现 {log_count} 条认证日志")
+            print(f"  Found {log_count} authentication logs")
 
             logs = []
             if log_count > 0:
-                # 如果日志数量不多，可以获取全部日志
-                # 也可以使用分页函数 getAuthLogs 获取部分日志
+                # If not too many logs, get all logs
+                # Can also use getAuthLogs paging function to get partial logs
                 for i in range(log_count):
                     log_info = self.main_contract.functions.getAuthLog(
                         self.w3.to_bytes(hexstr=did_bytes32),
@@ -1491,9 +1491,9 @@ class BlockchainAuth:
                         'success': log_info[3]
                     })
 
-                    # 打印每条日志
+                    # Print each log
                     log_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(log_info[2]))
-                    print(f"  [{i + 1}] 时间: {log_time}, 结果: {'成功' if log_info[3] else '失败'}")
+                    print(f"  [{i + 1}] Time: {log_time}, Result: {'Success' if log_info[3] else 'Failure'}")
 
             return {
                 'success': True,
@@ -1501,7 +1501,7 @@ class BlockchainAuth:
                 'logs': logs
             }
         except Exception as e:
-            print(f"❌ 获取认证日志异常: {str(e)}")
+            print(f"❌ Get authentication logs exception: {str(e)}")
             return {
                 'success': False,
                 'error': str(e),
@@ -1510,63 +1510,64 @@ class BlockchainAuth:
             }
 
     def wait_for_challenge_expiry(self, challenge_info, additional_wait=5):
-        """等待认证挑战过期"""
+        """Wait for authentication challenge to expire"""
         if not challenge_info['success'] or 'expires_at' not in challenge_info:
-            print("⚠️ 无法确定挑战过期时间")
+            print("⚠️ Cannot determine challenge expiration time")
             return False
 
-        # 计算需要等待的时间
+        # Calculate wait time
         current_time = int(time.time())
         expires_at = challenge_info['expires_at']
 
         if current_time >= expires_at:
-            print("挑战已经过期")
+            print("Challenge already expired")
             return True
 
         wait_time = expires_at - current_time + additional_wait
 
-        if wait_time > 300:  # 等待时间过长，跳过
-            print(f"⚠️ 等待挑战过期需要 {wait_time} 秒，跳过等待")
+        if wait_time > 300:  # Wait time too long, skip
+            print(f"⚠️ Waiting for challenge expiry requires {wait_time} seconds, skipping wait")
             return False
 
-        print(f"等待挑战过期，需要 {wait_time} 秒...")
+        print(f"Waiting for challenge to expire, requires {wait_time} seconds...")
         time.sleep(wait_time)
-        print("挑战应该已经过期")
+        print("Challenge should now be expired")
         return True
 
     def run_system_test(self):
         print("\n" + "=" * 80)
-        print("开始系统管理功能测试")
+        print("Starting System Management Feature Tests")
         print("=" * 80)
 
-        # 步骤0: 准备测试环境
+        # Step 0: Prepare test environment
         print("\n" + "-" * 60)
-        print("步骤0: 准备测试环境")
+        print("Step 0: Prepare Test Environment")
         print("-" * 60)
 
-        # 检查管理员是否已注册
+        # Check if admin is registered
         is_registered = self.check_admin_registration()
         if not is_registered:
-            print("管理员未注册，先注册管理员...")
+            print("Admin not registered, registering admin first...")
             admin_reg_result = self.register_admin_as_user()
             if not admin_reg_result['success']:
-                print("❌ 管理员注册失败，终止测试")
+                print("❌ Admin registration failed, terminating test")
                 return
-            print("✅ 管理员注册成功")
+            print("✅ Admin registration successful")
         else:
-            print("✅ 管理员已注册为用户")
+            print("✅ Admin already registered as user")
 
-            # 获取管理员信息
+            # Get admin information
             admin_info = self.get_user_info(self.admin_account.address)
             if admin_info['success']:
-                print(f"管理员信息:")
-                print(f"  名称: {admin_info['name']}")
-                print(f"  邮箱: {admin_info['email']}")
-                print(f"  角色: {self.get_role_text(admin_info['role'])}")
-                print(f"  注册时间: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(admin_info['registered_at']))}")
-                print(f"  活跃状态: {'活跃' if admin_info['is_active'] else '已停用'}")
+                print(f"Admin information:")
+                print(f"  Name: {admin_info['name']}")
+                print(f"  Email: {admin_info['email']}")
+                print(f"  Role: {self.get_role_text(admin_info['role'])}")
+                print(
+                    f"  Registration time: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(admin_info['registered_at']))}")
+                print(f"  Active status: {'Active' if admin_info['is_active'] else 'Deactivated'}")
 
-                # 更新admin_users列表
+                # Update admin_users list
                 self.admin_users.append({
                     'address': self.admin_account.address,
                     'name': admin_info['name'],
@@ -1575,120 +1576,120 @@ class BlockchainAuth:
                     'account': {'address': self.admin_account.address, 'private_key': self.admin_account.key.hex()}
                 })
 
-            # 创建测试账户
-        print("创建测试用户账户...")
-        self.test_accounts = self.create_new_accounts(4)  # 创建4个测试账户
+        # Create test accounts
+        print("Creating test user accounts...")
+        self.test_accounts = self.create_new_accounts(4)  # Create 4 test accounts
 
-        # 步骤1: 用户注册与分类管理
+        # Step 1: User registration and classification management
         print("\n" + "-" * 60)
-        print("步骤1: 用户注册与分类管理")
+        print("Step 1: User Registration and Classification Management")
         print("-" * 60)
 
-        # 注册测试用户
+        # Register test users
         for idx, account in enumerate(self.test_accounts):
             user_name = f"System Test User {idx + 1}"
             user_email = f"systestuser{idx + 1}@example.com"
             self.register_user_from_account(account, user_name, user_email)
 
-        # 显示当前用户数量
+        # Display current user count
         user_count = self.get_user_count()
         if user_count['success']:
-            print(f"系统中共有 {user_count['count']} 个用户")
+            print(f"System has {user_count['count']} users in total")
 
-            # 获取用户列表
+            # Get user list
             users = self.get_user_list(0, user_count['count'])
             if users['success']:
-                print(f"用户列表:")
+                print(f"User list:")
                 for i in range(len(users['addresses'])):
                     role_text = self.get_role_text(users['roles'][i])
                     print(
-                        f"  [{i + 1}] {users['names'][i]} - {users['addresses'][i]} - {role_text} - {'活跃' if users['is_actives'][i] else '已停用'}")
+                        f"  [{i + 1}] {users['names'][i]} - {users['addresses'][i]} - {role_text} - {'Active' if users['is_actives'][i] else 'Deactivated'}")
 
-        # 步骤2: 角色管理测试
+        # Step 2: Role management test
         print("\n" + "-" * 60)
-        print("步骤2: 角色管理测试")
+        print("Step 2: Role Management Test")
         print("-" * 60)
 
         if len(self.test_users) >= 2:
-            # 将第一个用户提升为网络管理员
+            # Promote first user to network administrator
             network_admin_candidate = self.test_users[0]
 
-            print(f"将用户 {network_admin_candidate['name']} 提升为网络管理员")
+            print(f"Promoting user {network_admin_candidate['name']} to Network Administrator")
             result = self.change_user_role(
                 network_admin_candidate['address'],
                 self.USER_ROLE["NETWORK_ADMIN"]
             )
 
             if result['success']:
-                print(f"✅ 成功将用户提升为网络管理员")
+                print(f"✅ Successfully promoted user to Network Administrator")
 
-                # 获取更新后的用户信息
+                # Get updated user information
                 updated_info = self.get_user_info(network_admin_candidate['address'])
                 if updated_info['success']:
-                    print(f"更新后的用户角色: {self.get_role_text(updated_info['role'])}")
+                    print(f"Updated user role: {self.get_role_text(updated_info['role'])}")
 
                     if updated_info['role'] == self.USER_ROLE["NETWORK_ADMIN"]:
-                        print(f"✅ 用户角色已成功更新为网络管理员")
+                        print(f"✅ User role successfully updated to Network Administrator")
                     else:
-                        print(f"❌ 用户角色更新失败")
+                        print(f"❌ User role update failed")
             else:
-                print(f"❌ 修改用户角色失败")
+                print(f"❌ User role change failed")
 
-            # 将第二个用户提升为系统管理员
+            # Promote second user to system administrator
             system_admin_candidate = self.test_users[1]
 
-            print(f"将用户 {system_admin_candidate['name']} 提升为系统管理员")
+            print(f"Promoting user {system_admin_candidate['name']} to System Administrator")
             result = self.change_user_role(
                 system_admin_candidate['address'],
                 self.USER_ROLE["SYSTEM_ADMIN"]
             )
 
             if result['success']:
-                print(f"✅ 成功将用户提升为系统管理员")
+                print(f"✅ Successfully promoted user to System Administrator")
 
-                # 获取更新后的用户信息
+                # Get updated user information
                 updated_info = self.get_user_info(system_admin_candidate['address'])
                 if updated_info['success']:
-                    print(f"更新后的用户角色: {self.get_role_text(updated_info['role'])}")
+                    print(f"Updated user role: {self.get_role_text(updated_info['role'])}")
 
                     if updated_info['role'] == self.USER_ROLE["SYSTEM_ADMIN"]:
-                        print(f"✅ 用户角色已成功更新为系统管理员")
+                        print(f"✅ User role successfully updated to System Administrator")
                     else:
-                        print(f"❌ 用户角色更新失败")
+                        print(f"❌ User role update failed")
             else:
-                print(f"❌ 修改用户角色失败")
+                print(f"❌ User role change failed")
 
-            # 打印当前的角色分布
-            print(f"\n当前用户角色分布:")
-            print(f"  系统管理员: {len(self.admin_users)} 名")
-            print(f"  网络管理员: {len(self.network_admin_users)} 名")
-            print(f"  普通用户: {len(self.regular_users)} 名")
+            # Print current role distribution
+            print(f"\nCurrent user role distribution:")
+            print(f"  System Administrators: {len(self.admin_users)}")
+            print(f"  Network Administrators: {len(self.network_admin_users)}")
+            print(f"  Regular Users: {len(self.regular_users)}")
 
             users = self.get_user_list(0, user_count['count'])
             if users['success']:
-                print(f"用户列表:")
+                print(f"User list:")
                 for i in range(len(users['addresses'])):
                     role_text = self.get_role_text(users['roles'][i])
                     print(
-                        f"  [{i + 1}] {users['names'][i]} - {users['addresses'][i]} - {role_text} - {'活跃' if users['is_actives'][i] else '已停用'}")
+                        f"  [{i + 1}] {users['names'][i]} - {users['addresses'][i]} - {role_text} - {'Active' if users['is_actives'][i] else 'Deactivated'}")
 
-        # 步骤3: 用户信息更新测试
+        # Step 3: User information update test
         print("\n" + "-" * 60)
-        print("步骤3: 用户信息更新测试")
+        print("Step 3: User Information Update Test")
         print("-" * 60)
 
         if len(self.regular_users) > 0:
-            # 选择一个普通用户进行信息更新测试
+            # Select a regular user for information update test
             test_user = self.regular_users[0]
 
-            # 获取原始用户信息
+            # Get original user information
             original_info = self.get_user_info(test_user['address'])
             if original_info['success']:
-                print(f"原始用户信息:")
-                print(f"  名称: {original_info['name']}")
-                print(f"  邮箱: {original_info['email']}")
+                print(f"Original user information:")
+                print(f"  Name: {original_info['name']}")
+                print(f"  Email: {original_info['email']}")
 
-                # 更新用户信息
+                # Update user information
                 new_name = f"{original_info['name']}_Updated"
                 new_email = f"updated_{uuid.uuid4().hex[:6]}@example.com"
 
@@ -1699,82 +1700,82 @@ class BlockchainAuth:
                 )
 
                 if update_result['success']:
-                    print(f"✅ 用户信息更新成功")
+                    print(f"✅ User information update successful")
 
-                    # 验证更新后的信息
+                    # Verify updated information
                     updated_info = self.get_user_info(test_user['address'])
                     if updated_info['success']:
-                        print(f"更新后的用户信息:")
-                        print(f"  名称: {updated_info['name']}")
-                        print(f"  邮箱: {updated_info['email']}")
+                        print(f"Updated user information:")
+                        print(f"  Name: {updated_info['name']}")
+                        print(f"  Email: {updated_info['email']}")
 
                         if updated_info['name'] == new_name and updated_info['email'] == new_email:
-                            print(f"✅ 用户信息验证成功")
+                            print(f"✅ User information verification successful")
                         else:
-                            print(f"❌ 用户信息验证失败")
+                            print(f"❌ User information verification failed")
                 else:
-                    print(f"❌ 用户信息更新失败")
+                    print(f"❌ User information update failed")
         else:
-            print("没有可用的普通用户，跳过用户信息更新测试")
+            print("No regular users available, skipping user information update test")
 
-        # 步骤4: 用户停用测试
+        # Step 4: User deactivation test
         print("\n" + "-" * 60)
-        print("步骤4: 用户停用测试")
+        print("Step 4: User Deactivation Test")
         print("-" * 60)
 
         if len(self.regular_users) > 1:
-            # 选择一个普通用户进行停用测试
+            # Select a regular user for deactivation test
             test_user = self.regular_users[1]
 
-            # 获取原始用户状态
+            # Get original user status
             original_info = self.get_user_info(test_user['address'])
             if original_info['success']:
-                print(f"原始用户状态: {'活跃' if original_info['is_active'] else '已停用'}")
+                print(f"Original user status: {'Active' if original_info['is_active'] else 'Deactivated'}")
 
                 if original_info['is_active']:
-                    # 停用用户
+                    # Deactivate user
                     deactivate_result = self.deactivate_user(test_user['account'])
 
                     if deactivate_result['success']:
-                        print(f"✅ 用户停用操作成功")
+                        print(f"✅ User deactivation operation successful")
 
-                        # 验证用户状态
+                        # Verify user status
                         updated_info = self.get_user_info(test_user['address'])
                         if updated_info['success']:
-                            print(f"更新后的用户状态: {'活跃' if updated_info['is_active'] else '已停用'}")
+                            print(f"Updated user status: {'Active' if updated_info['is_active'] else 'Deactivated'}")
 
                             if not updated_info['is_active']:
-                                print(f"✅ 用户成功停用")
+                                print(f"✅ User successfully deactivated")
                             else:
-                                print(f"❌ 用户停用验证失败")
+                                print(f"❌ User deactivation verification failed")
                     else:
-                        print(f"❌ 用户停用操作失败")
+                        print(f"❌ User deactivation operation failed")
                 else:
-                    print(f"用户已处于停用状态，跳过停用测试")
+                    print(f"User already deactivated, skipping deactivation test")
         else:
-            print("没有足够的普通用户，跳过用户停用测试")
+            print("Not enough regular users, skipping user deactivation test")
 
-        # 步骤5: 用户登录测试
+        # Step 5: User login test
         print("\n" + "-" * 60)
-        print("步骤5: 用户登录测试")
+        print("Step 5: User Login Test")
         print("-" * 60)
 
         if len(self.test_users) > 0:
-            # 选择一个活跃的测试用户
+            # Select an active test user
             active_users = [user for user in self.test_users if user.get('is_active', True)]
 
             if active_users:
                 test_user = active_users[0]
 
-                print(f"测试用户 {test_user['name']} 的登录流程")
+                print(f"Testing login flow for user {test_user['name']}")
 
-                # 5.1 生成登录挑战
-                print("\n5.1 生成登录挑战")
+                # 5.1 Generate login challenge
+                print("\n5.1 Generate Login Challenge")
                 challenge_result = self.generate_login_challenge(test_user['address'])
 
                 if challenge_result['success']:
-                    # 5.2 签名挑战
-                    print("\n5.2 用户签名挑战")
+                    # 5.2 Sign challenge
+                    print("\n5.2 User Signs Challenge")
                     signature = self.sign_login_challenge(
                         test_user['private_key'],
                         test_user['address'],
@@ -1782,8 +1783,8 @@ class BlockchainAuth:
                     )
 
                     if signature:
-                        # 5.3 验证登录
-                        print("\n5.3 验证登录")
+                        # 5.3 Verify login
+                        print("\n5.3 Verify Login")
                         login_result = self.verify_login(
                             test_user['address'],
                             challenge_result['challenge'],
@@ -1791,38 +1792,39 @@ class BlockchainAuth:
                         )
 
                         if login_result['success'] and login_result['login_success']:
-                            print(f"✅ 用户登录成功")
-                            print(f"  用户角色: {self.get_role_text(login_result['user_role'])}")
+                            print(f"✅ User login successful")
+                            print(f"  User role: {self.get_role_text(login_result['user_role'])}")
                         else:
-                            print(f"❌ 用户登录失败")
+                            print(f"❌ User login failed")
                     else:
-                        print(f"❌ 签名挑战失败，跳过登录验证")
+                        print(f"❌ Challenge signing failed, skipping login verification")
                 else:
-                    print(f"❌ 生成登录挑战失败，跳过后续步骤")
+                    print(f"❌ Generate login challenge failed, skipping subsequent steps")
             else:
-                print("没有活跃的测试用户，跳过登录测试")
+                print("No active test users, skipping login test")
         else:
-            print("没有可用的测试用户，跳过登录测试")
+            print("No test users available, skipping login test")
 
-        # 步骤6: 用户权限测试
+        # Step 6: User permissions test
         print("\n" + "-" * 60)
-        print("步骤6: 用户权限测试")
+        print("Step 6: User Permissions Test")
         print("-" * 60)
 
-        # 6.1 普通用户尝试更改其他用户的角色（应该失败）
-        print("\n6.1 普通用户尝试更改其他用户的角色")
+        # 6.1 Regular user attempts to change another user's role (should fail)
+        print("\n6.1 Regular user attempts to change another user's role")
 
         if len(self.regular_users) > 0 and len(self.test_users) > 2:
             regular_user = self.regular_users[0]
             target_user = [user for user in self.test_users if user['address'] != regular_user['address']][0]
 
-            print(f"普通用户 {regular_user['name']} 尝试将用户 {target_user['name']} 提升为网络管理员")
+            print(
+                f"Regular user {regular_user['name']} attempts to promote user {target_user['name']} to Network Administrator")
 
-            # 保存当前nonce
+            # Save current nonce
             original_nonce = self.w3.eth.get_transaction_count(self.admin_account.address)
 
             try:
-                # 构建交易（注意：这里我们预期会失败）
+                # Build transaction (note: we expect this to fail)
                 tx = self.user_manager_contract.functions.changeUserRole(
                     target_user['address'],
                     self.USER_ROLE["NETWORK_ADMIN"]
@@ -1833,187 +1835,190 @@ class BlockchainAuth:
                     'gasPrice': self.w3.eth.gas_price
                 })
 
-                # 签名并发送交易
+                # Sign and send transaction
                 signed_tx = self.w3.eth.account.sign_transaction(tx, regular_user['account']['private_key'])
 
-                # 这里可能会抛出异常，因为权限不足
+                # This may throw an exception due to insufficient permissions
                 tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
 
-                # 等待交易确认
+                # Wait for transaction confirmation
                 tx_receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
 
                 if tx_receipt.status == 1:
-                    print(f"❌ 普通用户成功修改了其他用户角色，这是一个安全问题！")
+                    print(f"❌ Regular user successfully modified another user's role, this is a security issue!")
                 else:
-                    print(f"✅ 交易被接受但执行失败，权限检查正常")
+                    print(f"✅ Transaction accepted but execution failed, permission check working correctly")
             except Exception as e:
-                print(f"✅ 交易被拒绝，权限检查正常: {str(e)}")
+                print(f"✅ Transaction rejected, permission check working correctly: {str(e)}")
         else:
-            print("没有足够的用户进行权限测试，跳过")
+            print("Not enough users for permission test, skipping")
 
         print("\n" + "=" * 80)
-        print("开始网络创建和授权测试")
+        print("Starting Network Creation and Authorization Test")
         print("=" * 80)
 
-        # 步骤0: 确保管理员已注册为用户
+        # Step 0: Ensure admin is registered as a user
         print("\n" + "-" * 60)
-        print("步骤0: 确保管理员已注册为用户")
+        print("Step 0: Ensure Admin is Registered as a User")
         print("-" * 60)
 
-        # 检查管理员是否已注册
+        # Check if admin is registered
         is_registered = self.check_admin_registration()
         if not is_registered:
-            print("管理员尚未注册为用户，先注册管理员...")
+            print("Admin not yet registered as a user, registering admin first...")
             admin_reg_result = self.register_admin_as_user()
             if not admin_reg_result['success']:
-                print("❌ 管理员注册失败，测试终止")
+                print("❌ Admin registration failed, test terminated")
                 return
-            print("✅ 管理员注册成功")
+            print("✅ Admin registration successful")
         else:
-            print("✅ 管理员已注册为用户")
+            print("✅ Admin already registered as a user")
 
-        # 步骤1: 创建测试用户账户
+        # Step 1: Create test user accounts
         print("\n" + "-" * 60)
-        print("步骤1: 创建测试用户账户")
+        print("Step 1: Create Test User Accounts")
         print("-" * 60)
 
-        # 创建3个新用户账户
+        # Create 3 new user accounts
         self.test_accounts = self.create_new_accounts(3)
 
-        # 为每个账户注册用户
+        # Register users for each account
         users = []
         for idx, account in enumerate(self.test_accounts):
             user_name = f"Network Test User {idx + 1}"
             user_email = f"netuser{idx + 1}@example.com"
 
-            # 注册用户
+            # Register user
             user_info = self.register_user_from_account(account, user_name, user_email)
             if user_info['success']:
                 users.append(user_info)
 
-        print(f"成功注册 {len(users)} 个测试用户")
+        print(f"Successfully registered {len(users)} test users")
 
-        # 步骤2: 管理员创建网络
+        # Step 2: Admin creates network
         print("\n" + "-" * 60)
-        print("步骤2: 管理员创建网络")
+        print("Step 2: Admin Creates Network")
         print("-" * 60)
 
-        # 创建新网络
-        network_name = "CSEC5615 测试无线网络"
+        # Create new network
+        network_name = "CSEC5615 Test Wireless Network"
         network_info = self.create_network(network_name)
 
         if not network_info['success']:
-            print("❌ 网络创建失败，测试终止")
+            print("❌ Network creation failed, test terminated")
             return
 
-        print(f"网络详情:")
-        print(f"  名称: {network_info['name']}")
+        print(f"Network details:")
+        print(f"  Name: {network_info['name']}")
         print(f"  ID: {network_info['network_id']}")
         print(f"  ID (bytes32): {network_info['network_id_bytes32']}")
 
-        # 获取管理员的网络列表
+        # Get admin's network list
         admin_networks = self.get_owner_networks()
         if admin_networks['success']:
-            print(f"管理员拥有 {admin_networks['network_count']} 个网络:")
+            print(f"Admin owns {admin_networks['network_count']} networks:")
             for idx, net_id in enumerate(admin_networks['networks']):
                 print(f"  [{idx + 1}] {net_id}")
 
         print("\n" + "-" * 60)
-        print("步骤3: 为每个用户注册设备")
+        print("Step 3: Register Devices for Each User")
         print("-" * 60)
         devices = []
         device_types = ["smartphone", "laptop", "tablet"]
 
         for idx, user in enumerate(users):
             device_type = device_types[idx % len(device_types)]
-            device_name = f"{user['name']}的{device_type}"
+            device_name = f"{user['name']}'s {device_type}"
 
-            # 注册设备
+            # Register device
             device_info = self.register_device(
                 device_type,
                 device_name,
-                self.test_accounts[idx]  # 对应的账户
+                self.test_accounts[idx]  # Corresponding account
             )
 
             if device_info['success']:
                 devices.append(device_info)
-                print(f"设备详情:")
-                print(f"  名称: {device_info['name']}")
+                print(f"Device details:")
+                print(f"  Name: {device_info['name']}")
                 print(f"  DID: {device_info['did']}")
                 print(f"  DID (bytes32): {device_info['did_bytes32']}")
-                print(f"  所有者: {device_info['owner']}")
+                print(f"  Owner: {device_info['owner']}")
 
-        print(f"成功注册 {len(devices)} 个设备")
+        print(f"Successfully registered {len(devices)} devices")
 
-        # 步骤4: 管理员授予设备访问网络的权限
+        # Step 4: Admin grants devices access to network
         print("\n" + "-" * 60)
-        print("步骤4: 管理员授予设备访问网络的权限 - 单独授权")
+        print("Step 4: Admin Grants Devices Access to Network - Individual Authorization")
         print("-" * 60)
 
-        # 单独授权测试
+        # Individual authorization test
         if devices:
-            # 选择第一个设备进行单独授权测试
+            # Select first device for individual authorization test
             test_device = devices[0]
 
-            # 检查当前访问状态
+            # Check current access status
             access_check = self.check_network_access(
                 test_device['did_bytes32'],
                 network_info['network_id_bytes32']
             )
-            print(f"授权前访问状态: {'有权限' if access_check['has_access'] else '无权限'}")
+            print(f"Access status before authorization: {'Has access' if access_check['has_access'] else 'No access'}")
 
-            # 授予访问权限
+            # Grant access permission
             grant_result = self.grant_network_access(
                 test_device['did_bytes32'],
                 network_info['network_id_bytes32']
             )
 
             if grant_result['success']:
-                # 再次检查访问状态
+                # Check access status again
                 access_check = self.check_network_access(
                     test_device['did_bytes32'],
                     network_info['network_id_bytes32']
                 )
-                print(f"授权后访问状态: {'有权限' if access_check['has_access'] else '无权限'}")
+                print(
+                    f"Access status after authorization: {'Has access' if access_check['has_access'] else 'No access'}")
 
-        # 步骤5: 批量授权
+        # Step 5: Batch authorization
         print("\n" + "-" * 60)
-        print("步骤5: 管理员授予设备访问网络的权限 - 批量授权")
+        print("Step 5: Admin Grants Devices Access to Network - Batch Authorization")
         print("-" * 60)
 
         if len(devices) > 1:
-            # 选择剩余设备进行批量授权
+            # Select remaining devices for batch authorization
             remaining_devices = devices[1:]
             device_dids = [device['did_bytes32'] for device in remaining_devices]
 
-            # 检查当前访问状态
+            # Check current access status
             for idx, device in enumerate(remaining_devices):
                 access_check = self.check_network_access(
                     device['did_bytes32'],
                     network_info['network_id_bytes32']
                 )
-                print(f"设备 {idx + 1} 授权前状态: {'有权限' if access_check['has_access'] else '无权限'}")
+                print(
+                    f"Device {idx + 1} status before authorization: {'Has access' if access_check['has_access'] else 'No access'}")
 
-            # 批量授予访问权限
+            # Batch grant access permission
             batch_result = self.batch_grant_access(
                 device_dids,
                 network_info['network_id_bytes32']
             )
 
             if batch_result['success']:
-                print(f"批量授权结果: 成功授权 {batch_result['success_count']} 个设备")
+                print(f"Batch authorization result: Successfully authorized {batch_result['success_count']} devices")
 
-                # 再次检查访问状态
+                # Check access status again
                 for idx, device in enumerate(remaining_devices):
                     access_check = self.check_network_access(
                         device['did_bytes32'],
                         network_info['network_id_bytes32']
                     )
-                    print(f"设备 {idx + 1} 授权后状态: {'有权限' if access_check['has_access'] else '无权限'}")
+                    print(
+                        f"Device {idx + 1} status after authorization: {'Has access' if access_check['has_access'] else 'No access'}")
 
-        # 步骤6: 验证所有设备的访问权限
+        # Step 6: Verify all devices' access permissions
         print("\n" + "-" * 60)
-        print("步骤6: 验证所有设备的访问权限")
+        print("Step 6: Verify All Devices' Access Permissions")
         print("-" * 60)
 
         all_access_granted = True
@@ -2024,44 +2029,45 @@ class BlockchainAuth:
             )
 
             if access_check['has_access']:
-                print(f"✅ 设备 {device['name']} 已成功获得网络访问权限")
+                print(f"✅ Device {device['name']} has successfully gained network access permission")
             else:
-                print(f"❌ 设备 {device['name']} 未获得网络访问权限")
+                print(f"❌ Device {device['name']} has not gained network access permission")
                 all_access_granted = False
 
         if all_access_granted:
-            print("\n✅ 所有设备都已成功获得网络访问权限")
+            print("\n✅ All devices have successfully gained network access permissions")
         else:
-            print("\n❌ 部分设备未能获得网络访问权限")
+            print("\n❌ Some devices failed to gain network access permissions")
 
         print("\n" + "=" * 80)
         if all_access_granted:
-            print("测试结果: 成功 ✅")
+            print("Test Result: Success ✅")
         else:
-            print("测试结果: 部分失败 ⚠️")
+            print("Test Result: Partial Failure ⚠️")
         print("=" * 80)
-        # 步骤1: 基本认证流程测试
+
+        # Step 1: Basic authentication flow test
         print("\n" + "-" * 60)
-        print("步骤1: 基本认证流程测试")
+        print("Step 1: Basic Authentication Flow Test")
         print("-" * 60)
 
         if len(self.test_devices) > 0:
-            # 选择第一个设备进行认证测试
+            # Select first device for authentication test
             test_device = self.test_devices[0]
-            print(f"使用设备: {test_device['name']} (DID: {test_device['did']})")
+            print(f"Using device: {test_device['name']} (DID: {test_device['did']})")
 
-            # 1.1 生成认证挑战
-            print("\n认证步骤 1: 生成认证挑战")
+            # 1.1 Generate authentication challenge
+            print("\nAuthentication Step 1: Generate Authentication Challenge")
             challenge_result = self.generate_auth_challenge(
                 test_device['did_bytes32'],
                 network_info['network_id_bytes32']
             )
 
             if not challenge_result['success']:
-                print("❌ 生成认证挑战失败，跳过后续步骤")
+                print("❌ Generate authentication challenge failed, skipping subsequent steps")
             else:
-                # 1.2 设备签名挑战
-                print("\n认证步骤 2: 设备签名挑战")
+                # 1.2 Device signs challenge
+                print("\nAuthentication Step 2: Device Signs Challenge")
                 signature = self.sign_challenge(
                     test_device['keys']['private_key'],
                     test_device['did_bytes32'],
@@ -2069,10 +2075,10 @@ class BlockchainAuth:
                 )
 
                 if not signature:
-                    print("❌ 签名挑战失败，跳过后续步骤")
+                    print("❌ Sign challenge failed, skipping subsequent steps")
                 else:
-                    # 1.3 验证设备签名并获取令牌
-                    print("\n认证步骤 3: 验证设备并获取令牌")
+                    # 1.3 Verify device signature and get token
+                    print("\nAuthentication Step 3: Verify Device and Get Token")
                     auth_result = self.authenticate(
                         test_device['did_bytes32'],
                         network_info['network_id_bytes32'],
@@ -2081,72 +2087,72 @@ class BlockchainAuth:
                     )
 
                     if not auth_result['success']:
-                        print("❌ 设备认证失败，跳过后续步骤")
+                        print("❌ Device authentication failed, skipping subsequent steps")
                     else:
-                        # 1.4 验证令牌有效性
+                        # 1.4 Verify token validity
                         if 'token_id' in auth_result and auth_result['token_id']:
-                            print("\n认证步骤 4: 验证令牌有效性")
+                            print("\nAuthentication Step 4: Verify Token Validity")
                             token_valid = self.validate_token(auth_result['token_id'])
 
                             if token_valid['valid']:
-                                print("✅ 令牌验证成功")
+                                print("✅ Token verification successful")
                             else:
-                                print("❌ 令牌验证失败")
+                                print("❌ Token verification failed")
 
-                            # 1.5 查看认证日志
-                            print("\n认证步骤 5: 查看认证日志")
+                            # 1.5 View authentication logs
+                            print("\nAuthentication Step 5: View Authentication Logs")
                             auth_logs = self.get_auth_logs(test_device['did_bytes32'])
 
-        # 步骤2: 令牌撤销测试
+        # Step 2: Token revocation test
         print("\n" + "-" * 60)
-        print("步骤2: 令牌撤销测试")
+        print("Step 2: Token Revocation Test")
         print("-" * 60)
 
         if len(self.test_tokens) > 0:
             token = self.test_tokens[0]
             token_id = token['token_id']
 
-            # 2.1 确认令牌当前有效
-            print("\n2.1 确认令牌当前有效")
+            # 2.1 Confirm token is currently valid
+            print("\n2.1 Confirm Token is Currently Valid")
             token_valid = self.validate_token(token_id)
 
             if not token_valid['valid']:
-                print("❌ 令牌已经无效，跳过撤销测试")
+                print("❌ Token already invalid, skipping revocation test")
             else:
-                print("✅ 令牌当前有效")
+                print("✅ Token currently valid")
 
-                # 2.2 撤销令牌
-                print("\n2.2 撤销令牌")
+                # 2.2 Revoke token
+                print("\n2.2 Revoke Token")
                 revoke_result = self.revoke_token(token_id)
 
                 if not revoke_result['success']:
-                    print("❌ 令牌撤销失败")
+                    print("❌ Token revocation failed")
                 else:
-                    print("✅ 令牌撤销成功")
+                    print("✅ Token revocation successful")
 
-                    # 2.3 再次验证令牌有效性
-                    print("\n2.3 再次验证令牌有效性")
+                    # 2.3 Verify token validity again
+                    print("\n2.3 Verify Token Validity Again")
                     token_valid = self.validate_token(token_id)
 
                     if token_valid['valid']:
-                        print("❌ 令牌仍然有效，撤销可能不成功")
+                        print("❌ Token still valid, revocation may not have succeeded")
                     else:
-                        print("✅ 令牌已成功撤销，令牌现在无效")
+                        print("✅ Token successfully revoked, token now invalid")
         else:
-            print("⚠️ 没有可用令牌，跳过撤销测试")
+            print("⚠️ No tokens available, skipping revocation test")
 
-        # 步骤3: 重放攻击测试
+        # Step 3: Replay attack test
         print("\n" + "-" * 60)
-        print("步骤3: 重放攻击测试")
+        print("Step 3: Replay Attack Test")
         print("-" * 60)
 
         if len(self.test_devices) > 0:
-            # 选择第二个设备进行重放攻击测试
+            # Select second device for replay attack test
             test_device = self.test_devices[0] if len(self.test_devices) == 1 else self.test_devices[1]
-            print(f"使用设备: {test_device['name']} (DID: {test_device['did']})")
+            print(f"Using device: {test_device['name']} (DID: {test_device['did']})")
 
-            # 3.1 正常认证流程
-            print("\n3.1 正常认证流程")
+            # 3.1 Normal authentication flow
+            print("\n3.1 Normal Authentication Flow")
             challenge_result = self.generate_auth_challenge(
                 test_device['did_bytes32'],
                 network_info['network_id_bytes32']
@@ -2167,13 +2173,13 @@ class BlockchainAuth:
                 )
 
                 if first_auth_result['success']:
-                    print("✅ 首次认证成功")
+                    print("✅ First authentication successful")
 
-                    # 3.2 重放攻击测试 - 尝试使用相同的挑战和签名再次认证
-                    print("\n3.2 重放攻击测试")
-                    print("尝试使用相同的挑战和签名再次认证...")
+                    # 3.2 Replay attack test - try to use the same challenge and signature again
+                    print("\n3.2 Replay Attack Test")
+                    print("Trying to authenticate again using the same challenge and signature...")
 
-                    # 稍等片刻，以确保区块链状态已更新
+                    # Wait a moment to ensure blockchain state has updated
                     time.sleep(2)
 
                     replay_auth_result = self.authenticate(
@@ -2184,68 +2190,68 @@ class BlockchainAuth:
                     )
 
                     if replay_auth_result['success']:
-                        print("❌ 重放攻击成功！这说明系统存在安全漏洞")
+                        print("❌ Replay attack successful! This indicates a security vulnerability")
                     else:
-                        print("✅ 重放攻击被阻止，系统安全")
+                        print("✅ Replay attack blocked, system secure")
                 else:
-                    print("❌ 首次认证失败，跳过重放攻击测试")
+                    print("❌ First authentication failed, skipping replay attack test")
             else:
-                print("❌ 生成挑战失败，跳过重放攻击测试")
+                print("❌ Generate challenge failed, skipping replay attack test")
         else:
-            print("⚠️ 没有可用设备，跳过重放攻击测试")
+            print("⚠️ No devices available, skipping replay attack test")
 
-        # 步骤4: 过期挑战测试
+        # Step 4: Expired challenge test
         print("\n" + "-" * 60)
-        print("步骤4: 过期挑战测试")
+        print("Step 4: Expired Challenge Test")
         print("-" * 60)
 
         if len(self.test_devices) > 0:
-            # 选择一个设备进行过期挑战测试
+            # Select a device for expired challenge test
             test_device = self.test_devices[-1]
-            print(f"使用设备: {test_device['name']} (DID: {test_device['did']})")
+            print(f"Using device: {test_device['name']} (DID: {test_device['did']})")
 
-            # 4.1 生成认证挑战
-            print("\n4.1 生成认证挑战")
+            # 4.1 Generate authentication challenge
+            print("\n4.1 Generate Authentication Challenge")
             challenge_result = self.generate_auth_challenge(
                 test_device['did_bytes32'],
                 network_info['network_id_bytes32']
             )
 
             if challenge_result['success']:
-                # 签名挑战
+                # Sign challenge
                 signature = self.sign_challenge(
                     test_device['keys']['private_key'],
                     test_device['did_bytes32'],
                     challenge_result['challenge']
                 )
 
-                # 判断是否等待挑战过期（取决于AUTH_CHALLENGE_EXPIRY的设置）
-                # 在实际测试中，由于挑战过期时间可能很长，我们可以选择跳过等待
+                # Determine whether to wait for challenge to expire (depends on AUTH_CHALLENGE_EXPIRY setting)
+                # In actual testing, we might skip waiting if expiry time is long
                 should_wait = False
 
-                # 这里做一个假设：如果挑战过期时间不长，我们等待；否则跳过
+                # Assumption: if challenge expiry isn't long, we wait; otherwise skip
                 expires_in = challenge_result['expires_at'] - int(time.time())
-                if expires_in < 300:  # 小于5分钟，等待过期
+                if expires_in < 300:  # Less than 5 minutes, wait for expiry
                     should_wait = True
-                    print(f"\n4.2 等待挑战过期 (大约需要 {expires_in} 秒)...")
+                    print(f"\n4.2 Waiting for Challenge to Expire (approximately {expires_in} seconds)...")
                     wait_success = self.wait_for_challenge_expiry(challenge_result)
                     if not wait_success:
-                        print("⚠️ 无法等待挑战过期，假设已过期并继续测试")
+                        print("⚠️ Unable to wait for challenge expiry, assuming expired and continuing test")
                 else:
-                    print("\n4.2 挑战过期时间较长，跳过等待")
+                    print("\n4.2 Challenge expiry time too long, skipping wait")
                     print(
-                        f"  挑战将在 {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(challenge_result['expires_at']))} 过期")
-                    print("  在此测试中我们将使用模拟的过期挑战")
+                        f"  Challenge will expire at {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(challenge_result['expires_at']))}")
+                    print("  Using simulated expired challenge for this test")
 
-                # 4.3 尝试使用过期挑战进行认证
-                print("\n4.3 尝试使用过期/无效挑战进行认证")
+                # 4.3 Try to authenticate using expired challenge
+                print("\n4.3 Try to Authenticate Using Expired/Invalid Challenge")
 
                 if should_wait:
-                    print("使用等待过期的真实挑战...")
+                    print("Using real challenge that waited to expire...")
                 else:
-                    print("使用修改后的模拟过期挑战...")
-                    # 模拟一个过期/无效的挑战值
-                    challenge_result['challenge'] = "0x" + "0" * 64  # 全0的挑战值，应该是无效的
+                    print("Using modified simulated expired challenge...")
+                    # Simulate an expired/invalid challenge value
+                    challenge_result['challenge'] = "0x" + "0" * 64  # All-zero challenge value, should be invalid
 
                 expired_auth_result = self.authenticate(
                     test_device['did_bytes32'],
@@ -2255,34 +2261,34 @@ class BlockchainAuth:
                 )
 
                 if expired_auth_result['success']:
-                    print("❌ 使用过期/无效挑战认证成功！这说明系统存在安全问题")
+                    print("❌ Authentication with expired/invalid challenge successful! This indicates a security issue")
                 else:
-                    print("✅ 使用过期/无效挑战认证失败，系统安全")
+                    print("✅ Authentication with expired/invalid challenge failed, system secure")
             else:
-                print("❌ 生成挑战失败，跳过过期挑战测试")
+                print("❌ Generate challenge failed, skipping expired challenge test")
 
-        # 步骤5: 错误私钥签名测试
+        # Step 5: Wrong private key signature test
         print("\n" + "-" * 60)
-        print("步骤5: 错误私钥签名测试")
+        print("Step 5: Wrong Private Key Signature Test")
         print("-" * 60)
 
         if len(self.test_devices) > 0:
-            # 选择设备进行错误私钥测试
+            # Select device for wrong private key test
             test_device = self.test_devices[0]
-            print(f"使用设备: {test_device['name']} (DID: {test_device['did']})")
+            print(f"Using device: {test_device['name']} (DID: {test_device['did']})")
 
-            # 5.1 生成认证挑战
-            print("\n5.1 生成认证挑战")
+            # 5.1 Generate authentication challenge
+            print("\n5.1 Generate Authentication Challenge")
             challenge_result = self.generate_auth_challenge(
                 test_device['did_bytes32'],
                 network_info['network_id_bytes32']
             )
 
             if challenge_result['success']:
-                # 5.2 使用错误的私钥签名挑战
-                print("\n5.2 使用错误的私钥签名挑战")
+                # 5.2 Sign challenge with wrong private key
+                print("\n5.2 Sign Challenge with Wrong Private Key")
 
-                # 生成一个新的私钥（与设备原有私钥不同）
+                # Generate a new private key (different from device's original key)
                 wrong_keys = self.generate_keys()
                 wrong_private_key = wrong_keys['private_key']
 
@@ -2292,8 +2298,8 @@ class BlockchainAuth:
                     challenge_result['challenge']
                 )
 
-                # 5.3 尝试使用错误签名进行认证
-                print("\n5.3 尝试使用错误签名进行认证")
+                # 5.3 Try to authenticate using wrong signature
+                print("\n5.3 Try to Authenticate Using Wrong Signature")
                 wrong_auth_result = self.authenticate(
                     test_device['did_bytes32'],
                     network_info['network_id_bytes32'],
@@ -2302,133 +2308,139 @@ class BlockchainAuth:
                 )
 
                 if wrong_auth_result['success']:
-                    print("❌ 使用错误私钥认证成功！这说明系统存在安全问题")
+                    print("❌ Authentication with wrong private key successful! This indicates a security issue")
                 else:
-                    print("✅ 使用错误私钥认证失败，系统安全")
+                    print("✅ Authentication with wrong private key failed, system secure")
             else:
-                print("❌ 生成挑战失败，跳过错误私钥测试")
+                print("❌ Generate challenge failed, skipping wrong private key test")
 
-        # 步骤6: 认证日志验证
+        # Step 6: Authentication log verification
         print("\n" + "-" * 60)
-        print("步骤6: 认证日志验证")
+        print("Step 6: Authentication Log Verification")
         print("-" * 60)
 
         if len(self.test_devices) > 0:
-            # 获取所有设备的认证日志
+            # Get authentication logs for all devices
             for idx, device in enumerate(self.test_devices):
-                print(f"\n查询设备 {idx + 1}: {device['name']} 的认证日志")
+                print(f"\nChecking authentication logs for device {idx + 1}: {device['name']}")
                 auth_logs = self.get_auth_logs(device['did_bytes32'])
 
                 if not auth_logs['success'] or auth_logs['log_count'] == 0:
-                    print(f"  没有找到认证日志")
+                    print(f"  No authentication logs found")
                 else:
-                    print(f"  发现 {auth_logs['log_count']} 条认证日志")
+                    print(f"  Found {auth_logs['log_count']} authentication logs")
 
-                    # 分析成功和失败的日志数量
+                    # Analyze successful and failed log counts
                     success_count = len([log for log in auth_logs['logs'] if log['success']])
                     fail_count = len([log for log in auth_logs['logs'] if not log['success']])
 
-                    print(f"  成功认证: {success_count} 次")
-                    print(f"  失败认证: {fail_count} 次")
+                    print(f"  Successful authentications: {success_count}")
+                    print(f"  Failed authentications: {fail_count}")
 
-        # 总结测试结果
+        # Test result summary
         print("\n" + "=" * 80)
-        print("设备认证流程测试完成")
+        print("Device Authentication Flow Test Complete")
         print("=" * 80)
 
         print("\n" + "-" * 60)
-        print("步骤7: 测试设备停用功能")
+        print("Step 7: Test Device Deactivation Function")
         print("-" * 60)
 
         if devices:
-            # 选择一个设备进行停用测试
+            # Select a device for deactivation test
             test_device = devices[0]
 
-            # 获取设备当前状态
+            # Get current device status
             device_status = self.get_device_info(test_device['did_bytes32'])
             if device_status['success']:
-                print(f"设备当前状态:")
-                print(f"  名称: {device_status['name']}")
-                print(f"  所有者: {device_status['owner']}")
-                print(f"  是否活跃: {'是' if device_status['is_active'] else '否'}")
+                print(f"Current device status:")
+                print(f"  Name: {device_status['name']}")
+                print(f"  Owner: {device_status['owner']}")
+                print(f"  Active: {'Yes' if device_status['is_active'] else 'No'}")
 
                 if device_status['is_active']:
-                    # 执行设备停用
-                    owner_account = next((acc for acc in self.test_accounts if acc['address'] == test_device['owner']),
-                                         None)
+                    # Execute device deactivation
+                    owner_account = next(
+                        (acc for acc in self.test_accounts if acc['address'] == test_device['owner']),
+                        None)
                     deactivate_result = self.deactivate_device(test_device, owner_account)
 
                     if deactivate_result['success']:
-                        # 再次获取设备状态，确认是否已停用
+                        # Get device status again to confirm deactivation
                         updated_status = self.get_device_info(test_device['did_bytes32'])
                         if updated_status['success']:
-                            print(f"设备停用后状态:")
-                            print(f"  名称: {updated_status['name']}")
-                            print(f"  是否活跃: {'是' if updated_status['is_active'] else '否'}")
+                            print(f"Device status after deactivation:")
+                            print(f"  Name: {updated_status['name']}")
+                            print(f"  Active: {'Yes' if updated_status['is_active'] else 'No'}")
 
                             if not updated_status['is_active']:
-                                print(f"✅ 设备成功停用")
+                                print(f"✅ Device successfully deactivated")
                             else:
-                                print(f"❌ 设备停用操作成功，但设备仍处于活跃状态")
+                                print(f"❌ Device deactivation operation successful, but device still active")
                     else:
-                        print(f"❌ 设备停用操作失败: {deactivate_result.get('error', '未知错误')}")
+                        print(
+                            f"❌ Device deactivation operation failed: {deactivate_result.get('error', 'Unknown error')}")
                 else:
-                    print(f"设备已经处于停用状态，跳过停用测试")
+                    print(f"Device already deactivated, skipping deactivation test")
             else:
-                print(f"❌ 获取设备信息失败: {device_status.get('error', '未知错误')}")
+                print(f"❌ Failed to get device information: {device_status.get('error', 'Unknown error')}")
         else:
-            print(f"没有可用的测试设备，跳过停用测试")
+            print(f"No test devices available, skipping deactivation test")
 
-        # 步骤8: 测试停用后的网络访问权限
+        # Step 8: Test network access permission after deactivation
         print("\n" + "-" * 60)
-        print("步骤8: 测试停用后的网络访问权限")
+        print("Step 8: Test Network Access Permission After Deactivation")
         print("-" * 60)
 
         if devices and 'deactivate_result' in locals() and deactivate_result.get('success', False):
-            # 检查停用后的设备是否仍有网络访问权限
+            # Check if deactivated device still has network access permission
             access_check = self.check_network_access(
                 test_device['did_bytes32'],
                 network_info['network_id_bytes32']
             )
 
-            print(f"停用后设备访问状态: {'有权限' if access_check['has_access'] else '无权限'}")
+            print(
+                f"Device access status after deactivation: {'Has access' if access_check['has_access'] else 'No access'}")
 
             if access_check['has_access']:
-                print(f"⚠️ 注意: 设备虽然已停用，但仍然保留网络访问权限")
-                print(f"这可能是合约设计的预期行为，停用设备不会自动撤销网络访问权限")
+                print(f"⚠️ Note: Device retains network access permission even after deactivation")
+                print(
+                    f"This may be expected contract behavior, as deactivating a device doesn't automatically revoke network access")
             else:
-                print(f"✅ 设备停用后，网络访问权限已被撤销")
+                print(f"✅ Device lost network access permission after deactivation")
 
-            # 尝试撤销已停用设备的访问权限
-            print("\n尝试显式撤销已停用设备的访问权限...")
+            # Try to explicitly revoke deactivated device's access permission
+            print("\nAttempting to explicitly revoke deactivated device's access permission...")
             revoke_result = self.revoke_network_access(
                 test_device['did_bytes32'],
                 network_info['network_id_bytes32']
             )
 
             if revoke_result['success']:
-                print(f"✅ 成功撤销已停用设备的访问权限")
+                print(f"✅ Successfully revoked deactivated device's access permission")
 
-                # 再次检查访问状态
+                # Check access status again
                 access_check = self.check_network_access(
                     test_device['did_bytes32'],
                     network_info['network_id_bytes32']
                 )
-                print(f"撤销后设备访问状态: {'有权限' if access_check['has_access'] else '无权限'}")
+                print(
+                    f"Device access status after revocation: {'Has access' if access_check['has_access'] else 'No access'}")
             else:
-                print(f"❌ 撤销已停用设备的访问权限失败: {revoke_result.get('error', '未知错误')}")
+                print(
+                    f"❌ Failed to revoke deactivated device's access permission: {revoke_result.get('error', 'Unknown error')}")
 
-            print("\n测试结果摘要:")
-            print(f"  • 测试用户数量: {len(self.test_users)}")
-            print(f"  • 测试设备数量: {len(self.test_devices)}")
-            print(f"  • 测试网络数量: {len(self.test_networks)}")
-            print(f"  • 生成的令牌数量: {len(self.test_tokens)}")
+            print("\nTest Result Summary:")
+            print(f"  • Test users count: {len(self.test_users)}")
+            print(f"  • Test devices count: {len(self.test_devices)}")
+            print(f"  • Test networks count: {len(self.test_networks)}")
+            print(f"  • Generated tokens count: {len(self.test_tokens)}")
 
-            # 如果进行了足够的测试，可以给出一个总体评估
+            # If sufficient tests were conducted, provide an overall assessment
             if len(self.test_devices) > 0 and len(self.test_tokens) > 0:
-                print("\n系统安全性评估:")
+                print("\nSystem Security Assessment:")
 
-                # 使用变量记录各种测试的结果
+                # Use variables to track results of various tests
                 replay_secure = False if 'replay_auth_result' in locals() and replay_auth_result.get('success',
                                                                                                      False) else True
                 expiry_secure = False if 'expired_auth_result' in locals() and expired_auth_result.get('success',
@@ -2437,21 +2449,20 @@ class BlockchainAuth:
                                                                                                       False) else True
 
                 if replay_secure and expiry_secure and wrong_key_secure:
-                    print("  ✅ 系统通过了所有安全测试，认证机制运行良好")
+                    print("  ✅ System passed all security tests, authentication mechanism working properly")
                 else:
-                    print("  ⚠️ 系统存在以下安全问题:")
+                    print("  ⚠️ System has the following security issues:")
                     if not replay_secure:
-                        print("    - 重放攻击防护不足")
+                        print("    - Insufficient replay attack protection")
                     if not expiry_secure:
-                        print("    - 挑战过期机制不严格")
+                        print("    - Challenge expiration mechanism not strict enough")
                     if not wrong_key_secure:
-                        print("    - 签名验证存在漏洞")
-
+                        print("    - Signature verification has vulnerabilities")
 
 if __name__ == '__main__':
     try:
         test = BlockchainAuth()
         test.run_system_test()
     except Exception as e:
-        print(f"测试过程中出错: {str(e)}")
+        print(f"Error during test process: {str(e)}")
         traceback.print_exc()

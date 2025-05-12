@@ -2,40 +2,40 @@
 pragma solidity ^0.8.20;
 
 /**
- * @title 加密工具库
- * @notice 提供签名验证和加密相关功能
+ * @title Cryptographic Utility Library
+ * @notice Provides signature verification and encryption-related functionality
  */
 contract CryptoUtils {
     /**
-     * @dev 将公钥转换为以太坊地址
-     * @param publicKey 公钥
-     * @return 对应的以太坊地址
+     * @dev Convert public key to Ethereum address
+     * @param publicKey Public key
+     * @return Corresponding Ethereum address
      */
     function publicKeyToAddress(bytes memory publicKey) internal pure returns (address) {
-        // 避免额外的内存分配和循环
+        // Avoid additional memory allocation and loops
         bytes32 hash;
 
-        // 直接处理公钥，跳过复制操作
+        // Directly process the public key, skip copy operations
         assembly {
-            // 如果公钥以0x04开头（非压缩格式），则跳过第一个字节
+            // If the public key starts with 0x04 (uncompressed format), skip the first byte
             let offset := 0
             if eq(byte(0, mload(add(publicKey, 32))), 0x04) {
                 offset := 1
             }
 
-            // 计算keccak256哈希，避免创建新的内存
+            // Calculate keccak256 hash, avoid creating new memory
             hash := keccak256(add(add(publicKey, 32), offset), sub(mload(publicKey), offset))
         }
 
-        // 从哈希中提取地址（末尾20字节）
+        // Extract address from hash (last 20 bytes)
         return address(uint160(uint256(hash)));
     }
 
     /**
-     * @dev 从签名恢复签名者地址
-     * @param messageHash 消息哈希
-     * @param signature 签名
-     * @return 签名者地址
+     * @dev Recover signer address from signature
+     * @param messageHash Message hash
+     * @param signature Signature
+     * @return Signer address
      */
     function recoverSigner(bytes32 messageHash, bytes memory signature) internal pure returns (address) {
         require(signature.length == 65, "Invalid signature length");
@@ -44,31 +44,31 @@ contract CryptoUtils {
         bytes32 s;
         uint8 v;
 
-        // 从签名中提取r, s, v
+        // Extract r, s, v from signature
         assembly {
             r := mload(add(signature, 32))
             s := mload(add(signature, 64))
             v := byte(0, mload(add(signature, 96)))
         }
 
-        // 如果是新的签名标准，需要调整v值
+        // If using new signature standard, adjust v value
         if (v < 27) {
             v += 27;
         }
 
-        // 恢复签名者地址
+        // Recover signer address
         return ecrecover(messageHash, v, r, s);
     }
 
     /**
-     * @dev 构建要签名的消息哈希
-     * @param deviceType 设备类型
-     * @param did 设备的分布式标识符
-     * @param publicKey 设备的公钥
-     * @param name 设备名称
-     * @param metadata 设备元数据哈希
-     * @param owner 设备所有者
-     * @return 消息哈希
+     * @dev Construct message hash to be signed
+     * @param deviceType Device type
+     * @param did Device's decentralized identifier
+     * @param publicKey Device's public key
+     * @param name Device name
+     * @param metadata Device metadata hash
+     * @param owner Device owner
+     * @return Message hash
      */
     function getSignatureMessageHash(
         bytes32 deviceType,
@@ -80,7 +80,7 @@ contract CryptoUtils {
     ) public pure returns (bytes32) {
         bytes32 messageHash = keccak256(abi.encodePacked(deviceType, did, publicKey, name, metadata, owner));
 
-        // 添加以太坊签名前缀（防止签名被用于其他用途）
+        // Add Ethereum signature prefix (prevents signature from being used for other purposes)
         return keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", messageHash));
     }
 }

@@ -8,21 +8,21 @@ import "./NetworkManagement.sol";
 import "./AuthenticationManager.sol";
 
 /**
- * @title 区块链无线网络身份验证系统主合约
- * @notice 集成用户、设备、网络和认证管理的主合约接口
- * @dev 此合约作为统一入口，引用各个功能模块合约
+ * @title Blockchain Wireless Network Identity Authentication System Main Contract
+ * @notice Integrated main contract interface for user, device, network, and authentication management
+ * @dev This contract serves as a unified entry point, referencing all functional module contracts
  */
 contract BlockchainAuthMain is BaseStructures {
-    // 子合约实例
+    // Child contract instances
     UserManagement public userManager;
     DeviceManagement public deviceManager;
     NetworkManagement public networkManager;
     AuthenticationManager public authManager;
 
-    // 系统管理员地址
+    // System administrator address
     address public systemAdmin;
 
-    // 系统配置
+    // System configuration
     uint256 public deploymentTimestamp;
     string public version = "1.0.0";
     string public name = "Blockchain Auth System";
@@ -31,14 +31,14 @@ contract BlockchainAuthMain is BaseStructures {
     event TokenIssued(bytes32 indexed did, bytes32 indexed tokenId, uint256 expiresAt);
 
     /**
-     * @dev 构造函数，部署并初始化所有子合约
+     * @dev Constructor, deploys and initializes all child contracts
      */
     constructor() {
-        // 记录系统管理员和部署时间
+        // Record system administrator and deployment time
         systemAdmin = msg.sender;
         deploymentTimestamp = block.timestamp;
 
-        // 部署子合约
+        // Deploy child contracts
         userManager = new UserManagement(systemAdmin);
         deviceManager = new DeviceManagement(address(userManager));
         networkManager = new NetworkManagement(address(userManager));
@@ -49,11 +49,11 @@ contract BlockchainAuthMain is BaseStructures {
     }
 
     // =================================
-    // 用户管理相关委托函数
+    // User management delegated functions
     // =================================
 
     /**
-     * @dev 注册新用户
+     * @dev Register new user
      */
     function registerUser(
         string calldata name,
@@ -65,7 +65,7 @@ contract BlockchainAuthMain is BaseStructures {
     }
 
     /**
-     * @dev 更新用户信息
+     * @dev Update user information
      */
     function updateUserInfo(
         string calldata name,
@@ -76,7 +76,7 @@ contract BlockchainAuthMain is BaseStructures {
     }
 
     /**
-     * @dev 获取用户信息
+     * @dev Get user information
      */
     function getUserInfo(address userAddress) external view returns (
         string memory name,
@@ -100,14 +100,14 @@ contract BlockchainAuthMain is BaseStructures {
     }
 
     /**
-     * @dev 获取所有用户数量
+     * @dev Get total number of users
      */
     function getUserCount() external view returns (uint256 count) {
         return userManager.getUserCount();
     }
 
     /**
-     * @dev 获取分页的用户列表
+     * @dev Get paginated user list
      */
     function getUserList(uint256 offset, uint256 limit) external view returns (
         address[] memory userAddresses,
@@ -121,27 +121,26 @@ contract BlockchainAuthMain is BaseStructures {
     function deactivateUser() external returns (bool success, string memory message) {
         return userManager.deactivateUser(msg.sender);
     }
-
     // =================================
-    // 设备管理相关委托函数
+    // Device management delegated functions
     // =================================
 
     /**
-     * @dev 注册新设备
+     * @dev Register new device
      */
     function registerDevice(
         bytes32 deviceType,
         bytes32 did,
         bytes calldata publicKey,
         string calldata name,
-        bytes32 metadata,
-        bytes calldata signature
+        bytes32 metadata
+//        bytes calldata signature
     ) external returns (bool success, string memory message) {
-        return deviceManager.registerDevice(deviceType, did, publicKey, name, metadata, signature, msg.sender);
+        return deviceManager.registerDevice(deviceType, did, publicKey, name, metadata, msg.sender);
     }
 
     /**
-     * @dev 获取设备信息
+     * @dev Get device information
      */
     function getDeviceInfo(bytes32 did) external view returns (
         bytes32 deviceType,
@@ -158,7 +157,7 @@ contract BlockchainAuthMain is BaseStructures {
     }
 
     /**
-     * @dev 更新设备信息
+     * @dev Update device information
      */
     function updateDeviceInfo(bytes32 did, string calldata name, bytes32 metadata)
     external returns (bool success, string memory message) {
@@ -166,21 +165,21 @@ contract BlockchainAuthMain is BaseStructures {
     }
 
     /**
-     * @dev 停用设备
+     * @dev Deactivate device
      */
     function deactivateDevice(bytes32 did) external returns (bool success, string memory message) {
         return deviceManager.deactivateDevice(did);
     }
 
     /**
-     * @dev 获取用户拥有的设备列表
+     * @dev Get list of devices owned by user
      */
     function getOwnerDevices(address owner) external view returns (bytes32[] memory) {
         return deviceManager.getOwnerDevices(owner);
     }
 
     /**
-     * @dev 转移设备所有权
+     * @dev Transfer device ownership
      */
     function transferDevice(bytes32 did, address newOwner)
     external returns (bool success, string memory message) {
@@ -188,19 +187,19 @@ contract BlockchainAuthMain is BaseStructures {
     }
 
     // =================================
-    // 网络管理相关委托函数
+    // Network management delegated functions
     // =================================
 
     /**
-     * @dev 创建新的无线网络
+     * @dev Create new wireless network
      */
-    function createNetwork(bytes32 networkId, string calldata name)
+    function createNetwork(bytes32 networkId, string calldata _name)
     external returns (bool success, string memory message) {
-        return networkManager.createNetwork(msg.sender, networkId, name);
+        return networkManager.createNetwork(msg.sender, networkId, _name);
     }
 
     /**
-     * @dev 授予设备访问网络的权限
+     * @dev Grant device access to network
      */
     function grantAccess(bytes32 did, bytes32 networkId)
     external returns (bool success, string memory message) {
@@ -208,7 +207,7 @@ contract BlockchainAuthMain is BaseStructures {
     }
 
     /**
-     * @dev 批量授予设备访问网络的权限
+     * @dev Batch grant multiple devices access to network
      */
     function batchGrantAccess(bytes32[] calldata dids, bytes32 networkId)
     external returns (uint256 successCount) {
@@ -216,7 +215,7 @@ contract BlockchainAuthMain is BaseStructures {
     }
 
     /**
-     * @dev 撤销设备访问网络的权限
+     * @dev Revoke device access to network
      */
     function revokeAccess(bytes32 did, bytes32 networkId)
     external returns (bool success, string memory message) {
@@ -224,7 +223,7 @@ contract BlockchainAuthMain is BaseStructures {
     }
 
     /**
-     * @dev 检查设备是否有权访问网络
+     * @dev Check if device has access to network
      */
     function checkAccess(bytes32 did, bytes32 networkId)
     external view returns (bool hasAccess) {
@@ -232,18 +231,18 @@ contract BlockchainAuthMain is BaseStructures {
     }
 
     /**
-     * @dev 获取用户的网络列表
+     * @dev Get list of networks owned by user
      */
     function getOwnerNetworks(address owner) external view returns (bytes32[] memory) {
         return networkManager.getOwnerNetworks(owner);
     }
 
     // =================================
-    // 认证相关委托函数
+    // Authentication delegated functions
     // =================================
 
     /**
-     * @dev 生成认证挑战
+     * @dev Generate authentication challenge
      */
     function generateAuthChallenge(bytes32 did, bytes32 networkId)
     external returns (bytes32 challenge, uint256 expiresAt) {
@@ -255,14 +254,14 @@ contract BlockchainAuthMain is BaseStructures {
     }
 
     /**
-     * @dev 获取设备的最新认证挑战
+     * @dev Get device's latest authentication challenge
      */
     function getLatestChallenge(bytes32 did) external view returns (bytes32 challenge, uint256 timestamp) {
         return authManager.getLatestChallenge(did);
     }
 
     /**
-     * @dev 验证设备并发放访问令牌
+     * @dev Authenticate device and issue access token
      */
     function authenticate(bytes32 did, bytes32 networkId, bytes32 challenge, bytes calldata signature)
     external returns (bytes32 tokenId) {
@@ -273,28 +272,28 @@ contract BlockchainAuthMain is BaseStructures {
     }
 
     /**
-     * @dev 验证访问令牌是否有效
+     * @dev Validate if access token is valid
      */
     function validateToken(bytes32 tokenId) external view returns (bool valid) {
         return authManager.validateToken(tokenId);
     }
 
     /**
-     * @dev 撤销访问令牌
+     * @dev Revoke access token
      */
     function revokeToken(bytes32 tokenId) external returns (bool success, string memory message) {
         return authManager.revokeToken(tokenId);
     }
 
     /**
-     * @dev 获取设备的认证日志数量
+     * @dev Get number of authentication logs for device
      */
     function getAuthLogCount(bytes32 did) external view returns (uint256 count) {
         return authManager.getAuthLogCount(did);
     }
 
     /**
-     * @dev 获取设备的特定认证日志
+     * @dev Get specific authentication log for device
      */
     function getAuthLog(bytes32 did, uint256 index) external view returns (
         address verifier,
@@ -306,7 +305,7 @@ contract BlockchainAuthMain is BaseStructures {
     }
 
     /**
-     * @dev 分页获取设备的认证日志
+     * @dev Get paginated authentication logs for device
      */
     function getAuthLogs(bytes32 did, uint256 offset, uint256 limit)
     external view returns (

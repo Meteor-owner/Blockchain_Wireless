@@ -7,39 +7,38 @@ import "./DeviceManagement.sol";
 import "./NetworkManagement.sol";
 
 /**
- * @title 认证管理合约
- * @notice 处理设备认证、令牌管理和审计日志
+ * @title Authentication Manager Contract
+ * @notice Handles device authentication, token management, and audit logs
  */
 contract AuthenticationManager is BaseStructures, CryptoUtils {
     // =================================
-    // 存储映射
+    // Storage Mappings
     // =================================
 
-    mapping(bytes32 => AccessToken) internal accessTokens;   // 令牌ID => 访问令牌
-    mapping(bytes32 => AuthLog[]) internal authLogs;         // DID => 认证日志
-    mapping(bytes32 => bool) internal usedChallenges;        // 已使用的挑战值 => 是否已使用
-    mapping(bytes32 => uint256) internal challengeTimestamps; // 挑战值 => 创建时间戳
-    mapping(bytes32 => bytes32) public latestChallenges; // DID => 最新挑战
+    mapping(bytes32 => AccessToken) internal accessTokens;   // Token ID => Access token
+    mapping(bytes32 => AuthLog[]) internal authLogs;         // DID => Authentication logs
+    mapping(bytes32 => bool) internal usedChallenges;        // Used challenges => Is used
+    mapping(bytes32 => uint256) internal challengeTimestamps; // Challenge => Creation timestamp
+    mapping(bytes32 => bytes32) public latestChallenges; // DID => Latest challenge
 
-    // 设备管理和网络管理合约实例
+    // Device management and network management contract instances
     DeviceManagement internal deviceManager;
     NetworkManagement internal networkManager;
 
     // =================================
-    // 事件定义
+    // Event Definitions
     // =================================
 
     event AuthenticationAttempt(bytes32 indexed did, bytes32 indexed networkId, bool success);
     event TokenIssued(bytes32 indexed did, bytes32 indexed tokenId, uint256 expiresAt);
     event TokenRevoked(bytes32 indexed tokenId);
     event AuthChallengeGenerated(bytes32 indexed did, bytes32 indexed networkId, bytes32 challenge, uint256 expiresAt);
-
     // =================================
-    // 构造函数
+    // Constructor
     // =================================
 
     /**
-     * @dev 构造函数，设置设备管理和网络管理合约地址
+     * @dev Constructor, sets device management and network management contract addresses
      */
     constructor(address _deviceManagerAddress, address _networkManagerAddress) {
         deviceManager = DeviceManagement(_deviceManagerAddress);
@@ -47,19 +46,19 @@ contract AuthenticationManager is BaseStructures, CryptoUtils {
     }
 
     // =================================
-    // 认证相关函数
+    // Authentication Related Functions
     // =================================
 
     /**
-     * @dev 生成认证挑战
-     * @param did 设备的分布式标识符
-     * @param networkId 网络标识符
-     * @return challenge 生成的挑战值
-     * @return expiresAt 挑战过期时间
+     * @dev Generate authentication challenge
+     * @param did Device's decentralized identifier
+     * @param networkId Network identifier
+     * @return challenge Generated challenge value
+     * @return expiresAt Challenge expiration time
      */
     function generateAuthChallenge(bytes32 did, bytes32 networkId)
     external returns (bytes32 challenge, uint256 expiresAt) {
-        // 生成随机挑战
+        // Generate random challenge
         challenge = keccak256(abi.encodePacked(
             did,
             networkId,
@@ -67,15 +66,15 @@ contract AuthenticationManager is BaseStructures, CryptoUtils {
             blockhash(block.number - 1)
         ));
 
-        // 记录挑战创建时间和最新挑战
+        // Record challenge creation time and latest challenge
 //        challengeTimestamps[challenge] = block.timestamp + AUTH_CHALLENGE_EXPIRY;
-//        latestChallenges[did] = challenge;  // 存储此DID的最新挑战
+//        latestChallenges[did] = challenge;  // Store the latest challenge for this DID
 //        expiresAt = block.timestamp + AUTH_CHALLENGE_EXPIRY;
         expiresAt = block.timestamp + AUTH_CHALLENGE_EXPIRY;
         challengeTimestamps[challenge] = expiresAt;
         latestChallenges[did] = challenge;
 
-        // 触发事件
+        // Trigger event
         emit AuthChallengeGenerated(did, networkId, challenge, expiresAt);
 
         return (challenge, expiresAt);
@@ -88,16 +87,16 @@ contract AuthenticationManager is BaseStructures, CryptoUtils {
     }
 
     /**
-     * @dev 验证设备并发放访问令牌
-     * @param did 设备的分布式标识符
-     * @param networkId 网络标识符
-     * @param challenge 挑战值
-     * @param signature 挑战的签名
-     * @return tokenId 访问令牌ID
+     * @dev Verify device and issue access token
+     * @param did Device's decentralized identifier
+     * @param networkId Network identifier
+     * @param challenge Challenge value
+     * @param signature Challenge signature
+     * @return tokenId Access token ID
      */
     function authenticate(bytes32 did, bytes32 networkId, bytes32 challenge, bytes calldata signature)
     external returns (bytes32 tokenId) {
-        // 防重放攻击检查
+        // Anti-replay attack check
         require(!usedChallenges[challenge], "Challenge already used");
         require(challengeTimestamps[challenge] > 0, "Unknown challenge");
 
@@ -106,67 +105,66 @@ contract AuthenticationManager is BaseStructures, CryptoUtils {
             "Challenge expired"
         );
 
-        // 立即标记挑战为已使用，无论认证是否成功
+        // Immediately mark challenge as used, regardless of authentication success
         usedChallenges[challenge] = true;
 
-        // 检查访问权限
+        // Check access permission
         bool hasAccess = networkManager.checkAccess(did, networkId);
         if (!hasAccess) {
-            // 记录失败并立即返回
+            // Record failure and return immediately
             _recordAuthenticationAttempt(did, networkId, challenge, false);
             revert("No access rights");
         }
 
-        // 验证签名
+        // Verify signature
         (
-            bytes32 deviceType,
-            address owner,
+            ,
+            ,
             bytes memory publicKey,
-            uint256 registeredAt,
+            ,
             bool isActive,
-            string memory name,
-            bytes32 metadata,
-            address authorizedBy,
-            address userAddress
+            ,
+            ,
+            ,
         ) = deviceManager.getDeviceInfo(did);
 
-        // 检查设备是否活跃
+        // Check if device is active
         if (!isActive) {
             _recordAuthenticationAttempt(did, networkId, challenge, false);
             revert("Device is inactive");
         }
 
-        // 构建要验证的消息哈希
+        // Construct message hash to verify
         bytes32 messageHash = keccak256(abi.encodePacked(did, challenge));
         bytes32 ethSignedMessageHash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", messageHash));
 
-        // 验证签名
+        // Verify signature
         address recoveredAddress = recoverSigner(ethSignedMessageHash, signature);
         address deviceAddress = publicKeyToAddress(publicKey);
 
         bool validSignature = (recoveredAddress != address(0) && recoveredAddress == deviceAddress);
 
         if (!validSignature) {
-            // 记录失败并立即返回
+            // Record failure and return immediately
             _recordAuthenticationAttempt(did, networkId, challenge, false);
             revert("Invalid signature");
         }
 
-        // 认证成功 - 记录并发放令牌
+        // Authentication successful - record and issue token
         _recordAuthenticationAttempt(did, networkId, challenge, true);
 
-        // 发放访问令牌
+        // Issue access token
         tokenId = _issueToken(did);
 
         return tokenId;
     }
 
     /**
-     * @dev 记录认证尝试
-     * @param did 设备的分布式标识符
-     * @param networkId 网络标识符
-     * @param challenge 挑战值
-     * @param success 是否成功
+     * @dev Record authentication attempt
+     * @param did Device's decentralized identifier
+     * @param networkId Network identifier
+     * @param challenge Challenge value
+     * @param success Whether successful
      */
     function _recordAuthenticationAttempt(
         bytes32 did,
@@ -186,9 +184,9 @@ contract AuthenticationManager is BaseStructures, CryptoUtils {
     }
 
     /**
-     * @dev 发放令牌
-     * @param did 设备的分布式标识符
-     * @return tokenId 令牌ID
+     * @dev Issue token
+     * @param did Device's decentralized identifier
+     * @return tokenId Token ID
      */
     function _issueToken(bytes32 did) internal returns (bytes32) {
         bytes32 tokenId = keccak256(abi.encodePacked(did, block.timestamp, blockhash(block.number - 1)));
@@ -208,9 +206,9 @@ contract AuthenticationManager is BaseStructures, CryptoUtils {
     }
 
     /**
-     * @dev 验证访问令牌是否有效
-     * @param tokenId 令牌ID
-     * @return valid 令牌是否有效
+     * @dev Validate if access token is valid
+     * @param tokenId Token ID
+     * @return valid Whether token is valid
      */
     function validateToken(bytes32 tokenId) external view returns (bool valid) {
         AccessToken storage token = accessTokens[tokenId];
@@ -221,10 +219,10 @@ contract AuthenticationManager is BaseStructures, CryptoUtils {
     }
 
     /**
-     * @dev 撤销访问令牌
-     * @param tokenId 令牌ID
-     * @return success 是否成功
-     * @return message 返回消息
+     * @dev Revoke access token
+     * @param tokenId Token ID
+     * @return success Whether successful
+     * @return message Return message
      */
     function revokeToken(bytes32 tokenId) external returns (bool success, string memory message) {
         AccessToken storage token = accessTokens[tokenId];
@@ -238,20 +236,20 @@ contract AuthenticationManager is BaseStructures, CryptoUtils {
             return (false, "Token already revoked");
         }
 
-        // 获取设备信息，检查权限
+        // Get device information, check permissions
         (
-            ,  // deviceType (不需要)
+            ,  // deviceType (not needed)
             address owner,
-            ,  // publicKey (不需要)
-            ,  // registeredAt (不需要)
-            ,  // isActive (不需要)
-            ,  // name (不需要)
-            ,  // metadata (不需要)
-            ,  // authorizedBy (不需要)
+            ,  // publicKey (not needed)
+            ,  // registeredAt (not needed)
+            ,  // isActive (not needed)
+            ,  // name (not needed)
+            ,  // metadata (not needed)
+            ,  // authorizedBy (not needed)
             address userAddress
         ) = deviceManager.getDeviceInfo(did);
 
-        // 允许设备所有者或设备的用户撤销令牌
+        // Allow device owner or device's user to revoke token
         bool isAuthorized = (owner == msg.sender || userAddress == msg.sender);
 
         if (!isAuthorized) {
@@ -266,26 +264,26 @@ contract AuthenticationManager is BaseStructures, CryptoUtils {
     }
 
     // =================================
-    // 审计日志相关函数
+    // Audit Log Related Functions
     // =================================
 
     /**
-     * @dev 获取设备的认证日志数量
-     * @param did 设备的分布式标识符
-     * @return count 认证日志数量
+     * @dev Get number of authentication logs for device
+     * @param did Device's decentralized identifier
+     * @return count Number of authentication logs
      */
     function getAuthLogCount(bytes32 did) external view returns (uint256 count) {
         return authLogs[did].length;
     }
 
     /**
-     * @dev 获取设备的特定认证日志
-     * @param did 设备的分布式标识符
-     * @param index 日志索引
-     * @return verifier 验证者地址
-     * @return challengeHash 挑战哈希
-     * @return timestamp 认证时间
-     * @return success 认证结果
+     * @dev Get specific authentication log for device
+     * @param did Device's decentralized identifier
+     * @param index Log index
+     * @return verifier Verifier address
+     * @return challengeHash Challenge hash
+     * @return timestamp Authentication time
+     * @return success Authentication result
      */
     function getAuthLog(bytes32 did, uint256 index) external view returns (
         address verifier,
@@ -306,13 +304,13 @@ contract AuthenticationManager is BaseStructures, CryptoUtils {
     }
 
     /**
-     * @dev 分页获取设备的认证日志
-     * @param did 设备的分布式标识符
-     * @param offset 起始索引
-     * @param limit 数量限制
-     * @return verifiers 验证者地址数组
-     * @return timestamps 时间戳数组
-     * @return successes 认证结果数组
+     * @dev Get paginated authentication logs for device
+     * @param did Device's decentralized identifier
+     * @param offset Starting index
+     * @param limit Limit count
+     * @return verifiers Verifier address array
+     * @return timestamps Timestamp array
+     * @return successes Authentication result array
      */
     function getAuthLogs(bytes32 did, uint256 offset, uint256 limit)
     external view returns (
@@ -323,22 +321,22 @@ contract AuthenticationManager is BaseStructures, CryptoUtils {
         uint256 logCount = authLogs[did].length;
 
         if (offset >= logCount) {
-            // 返回空数组
+            // Return empty arrays
             return (new address[](0), new uint256[](0), new bool[](0));
         }
 
-        // 计算实际要返回的日志数量
+        // Calculate actual number of logs to return
         uint256 count = logCount - offset;
         if (count > limit) {
             count = limit;
         }
 
-        // 初始化返回数组
+        // Initialize return arrays
         verifiers = new address[](count);
         timestamps = new uint256[](count);
         successes = new bool[](count);
 
-        // 填充数组
+        // Populate arrays
         for (uint256 i = 0; i < count; i++) {
             AuthLog storage log = authLogs[did][offset + i];
             verifiers[i] = log.verifier;
@@ -350,10 +348,10 @@ contract AuthenticationManager is BaseStructures, CryptoUtils {
     }
 
     /**
-     * @dev 清理过期的挑战记录
-     * @param challenges 要清理的挑战值数组
-     * @param batchSize 批处理大小
-     * @return cleanedCount 已清理的挑战数量
+     * @dev Clean up expired challenge records
+     * @param challenges Array of challenge values to clean
+     * @param batchSize Batch processing size
+     * @return cleanedCount Number of challenges cleaned
      */
     function cleanupExpiredChallenges(bytes32[] calldata challenges, uint256 batchSize)
     external returns (uint256 cleanedCount) {
