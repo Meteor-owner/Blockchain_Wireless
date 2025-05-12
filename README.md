@@ -37,7 +37,6 @@ identity-chain/
 - **Token Management**: Issuance and verification of access tokens
 - **Audit Logs**: Records all authentication attempts on the blockchain, providing tamper-proof audit trails
 - **User Management**: Registration, authentication, and role-based access control for system users
-- **Web Interface**: User-friendly interface for managing devices, networks, and authentication
 
 ## Requirements
 
@@ -152,6 +151,7 @@ python Blockchain_auth.py
 
 ## Future Extensions
 
+- **User Interface Development**: A comprehensive web-based UI interface is under development
 - **Zero-Knowledge Proof Integration**: Implement zero-knowledge proofs to enhance privacy protection
 - **Multi-factor Authentication**: Combine with biometrics or other authentication factors
 - **Cross-Network Identity Federation**: Enable identity recognition between different networks
