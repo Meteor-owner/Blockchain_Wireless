@@ -471,34 +471,35 @@ contract UserManagement is BaseStructures, CryptoUtils {
     function updateUserInfo(
         string calldata name,
         string calldata email,
-        bytes calldata publicKey
+        bytes calldata publicKey,
+        address sender
     ) external onlyActiveUser returns (bool success, string memory message) {
         // 检查用户是否已注册
-        if (users[msg.sender].userAddress == address(0)) {
+        if (users[sender].userAddress == address(0)) {
             return (false, "User not registered");
         }
 
         // 如果用户名有变更，检查新用户名是否已存在
-        if (keccak256(abi.encodePacked(users[msg.sender].name)) != keccak256(abi.encodePacked(name))) {
+        if (keccak256(abi.encodePacked(users[sender].name)) != keccak256(abi.encodePacked(name))) {
             if (userNames[name] != address(0)) {
                 return (false, "Username already taken");
             }
             // 删除旧用户名映射
-            delete userNames[users[msg.sender].name];
+            delete userNames[users[sender].name];
             // 添加新用户名映射
-            userNames[name] = msg.sender;
+            userNames[name] = sender;
         }
 
         // 更新用户信息
-        users[msg.sender].name = name;
-        users[msg.sender].email = email;
+        users[sender].name = name;
+        users[sender].email = email;
 
         // 如果提供了新公钥，则更新
         if (publicKey.length > 0) {
-            users[msg.sender].publicKey = publicKey;
+            users[sender].publicKey = publicKey;
         }
 
-        emit UserUpdated(msg.sender, name);
+        emit UserUpdated(sender, name);
 
         return (true, "User information updated successfully");
     }

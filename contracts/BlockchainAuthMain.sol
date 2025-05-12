@@ -72,7 +72,7 @@ contract BlockchainAuthMain is BaseStructures {
         string calldata email,
         bytes calldata publicKey
     ) external returns (bool success, string memory message) {
-        return userManager.updateUserInfo(name, email, publicKey);
+        return userManager.updateUserInfo(name, email, publicKey,msg.sender);
     }
 
     /**
@@ -208,7 +208,7 @@ contract BlockchainAuthMain is BaseStructures {
      */
     function batchGrantAccess(bytes32[] calldata dids, bytes32 networkId)
     external returns (uint256 successCount) {
-        return networkManager.batchGrantAccess(dids, networkId);
+        return networkManager.batchGrantAccess(dids, networkId,msg.sender);
     }
 
     /**

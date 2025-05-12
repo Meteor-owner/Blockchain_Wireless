@@ -560,7 +560,7 @@ class NetworkCreationTest:
             ).build_transaction({
                 'from': self.admin_account.address,
                 'nonce': self.w3.eth.get_transaction_count(self.admin_account.address),
-                'gas': 1000000,  # 批量操作可能需要更多gas
+                'gas': 2000000,  # 批量操作可能需要更多gas
                 'gasPrice': self.w3.eth.gas_price
             })
 

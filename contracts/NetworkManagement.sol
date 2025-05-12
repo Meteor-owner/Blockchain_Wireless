@@ -141,10 +141,10 @@ contract NetworkManagement is BaseStructures {
      * @param networkId 网络标识符
      * @return successCount 成功授权的设备数量
      */
-    function batchGrantAccess(bytes32[] calldata dids, bytes32 networkId)
+    function batchGrantAccess(bytes32[] calldata dids, bytes32 networkId, address sender)
         external returns (uint256 successCount) {
         // 验证权限
-        bool isAuthorized = networks[networkId].owner == msg.sender;
+        bool isAuthorized = networks[networkId].owner == sender;
 
         require(isAuthorized, "Not authorized to grant access");
         require(networks[networkId].isActive, "Network is not active");
